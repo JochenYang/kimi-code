@@ -70,6 +70,7 @@ function createTestModel(
     readonly id?: string;
     readonly protocol?: Model['protocol'];
     readonly providerType?: string;
+    readonly headers?: Readonly<Record<string, string>>;
   } = {},
 ): Model {
   const providerType = options.providerType;
@@ -79,7 +80,7 @@ function createTestModel(
     aliases: [],
     protocol: options.protocol ?? 'openai',
     baseUrl: 'https://example.test/v1',
-    headers: {},
+    headers: options.headers ?? {},
     capabilities: {
       image_in: false,
       video_in: false,
@@ -645,6 +646,30 @@ describe('AgentProfileService (wire-backed config.update)', () => {
     expect(host.svc.getModelProviderType()).toBeUndefined();
   });
 
+  it('expands session placeholders into request-scoped headers', () => {
+    modelCatalog = createModelCatalogStub({
+      'example-model': createTestModel({
+        id: 'example-model',
+        headers: {
+          'x-session-id': '{session_id}',
+          'x-session-upper': '{SESSION_ID}',
+          'x-static': 'keep-me',
+        },
+      }),
+    });
+    const host = buildHost('profile-header-placeholders');
+    host.svc.configure({ emitStatusUpdated: () => undefined });
+
+    host.svc.update({ modelAlias: 'example-model', thinkingLevel: 'high' });
+
+    expect(host.svc.resolveRequestParams()).toMatchObject({
+      cacheKey: 'session-test',
+      headers: {
+        'x-session-id': 'session-test',
+        'x-session-upper': 'session-test',
+      },
+    });
+  });
   it('uses the resolved Kimi effort instead of the configured default', () => {
     modelCatalog = createModelCatalogStub({
       'kimi-code': createTestModel({ providerType: 'kimi' }),
