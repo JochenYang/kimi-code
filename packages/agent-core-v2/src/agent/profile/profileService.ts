@@ -466,8 +466,13 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       temperature: overrides?.temperature,
       topP: overrides?.topP,
     };
+    const headers =
+      model === undefined
+        ? undefined
+        : expandHeaderPlaceholders(model.headers, { session_id: this.sessionContext.sessionId });
     return {
       cacheKey: this.sessionContext.sessionId,
+      headers,
       sampling:
         sampling.temperature === undefined && sampling.topP === undefined ? undefined : sampling,
       thinkingEffort: thinking.effective,
@@ -913,6 +918,26 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     if (this.plugins.hasLoadedSnapshot()) this.frozenPluginSections = resolved;
     return resolved;
   }
+}
+
+/**
+ * Expand `{session_id}` (case-insensitive) in header values. Returns only
+ * changed entries so request-scoped headers override the model defaults.
+ */
+export function expandHeaderPlaceholders(
+  headers: Readonly<Record<string, string>>,
+  vars: Readonly<{ session_id: string }>,
+): Record<string, string> | undefined {
+  const expanded: Record<string, string> = {};
+  let changed = false;
+  for (const [name, value] of Object.entries(headers)) {
+    const next = value.replaceAll(/\{session_id\}/gi, vars.session_id);
+    if (next !== value) {
+      expanded[name] = next;
+      changed = true;
+    }
+  }
+  return changed ? expanded : undefined;
 }
 
 registerScopedService(

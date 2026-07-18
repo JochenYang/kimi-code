@@ -42,6 +42,9 @@ export type ModelRequestEvent =
 
 export interface ModelRequestParams {
   readonly cacheKey?: string;
+  /** Request-scoped headers; these override the model's default headers. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Per-turn sampling overrides. */
   readonly sampling?: SamplingOptions;
   readonly thinkingEffort?: ThinkingEffort;
   readonly thinkingKeep?: string;

@@ -335,6 +335,24 @@ describe('kimiModelEnvOverlay', () => {
     });
   });
 
+  it('merges env modelOverrides on top of existing TOML overrides', () => {
+    const { changed, effective } = applyKimiModelEnvOverlay(
+      {
+        KIMI_MODEL_TEMPERATURE: '0.3',
+      },
+      {
+        modelOverrides: { maxCompletionTokens: 0, thinkingKeep: 'all' },
+      },
+    );
+
+    expect(changed).toEqual(['modelOverrides']);
+    expect(effective['modelOverrides']).toEqual({
+      maxCompletionTokens: 0,
+      thinkingKeep: 'all',
+      temperature: 0.3,
+    });
+  });
+
   it('synthesizes an env model alias and default model from the minimal env set', () => {
     const { changed, effective } = applyKimiModelEnvOverlay({
       KIMI_MODEL_NAME: 'kimi-for-coding',

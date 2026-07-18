@@ -138,6 +138,7 @@ describe('ModelRequesterImpl request execution', () => {
         signal,
         {
           cacheKey: 'session-1',
+          headers: { 'x-session-id': 'session-1' },
           sampling: { temperature: 0.5, topP: 0.9 },
           thinkingEffort: 'high',
           thinkingKeep: 'all',
@@ -151,7 +152,10 @@ describe('ModelRequesterImpl request execution', () => {
     expect(provider.calls).toHaveLength(1);
     const options = provider.calls[0]!.options;
     expect(options?.signal).toBe(signal);
-    expect(options?.auth).toEqual({ apiKey: 'sk-1' });
+    expect(options?.auth).toEqual({
+      apiKey: 'sk-1',
+      headers: { 'x-session-id': 'session-1' },
+    });
     expect(options?.cacheKey).toBe('session-1');
     expect(options?.sampling).toEqual({ temperature: 0.5, topP: 0.9 });
     expect(options?.thinking).toEqual({ effort: 'high', keep: 'all' });

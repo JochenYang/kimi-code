@@ -127,7 +127,7 @@ export class ModelRequesterImpl implements ModelRequester {
               queue.push({ type: 'part', part });
             },
           },
-          { ...options, auth },
+          { ...options, auth: mergeRequestHeaders(auth, params?.headers) },
         );
       });
     } catch (error) {
@@ -193,6 +193,17 @@ function isUnauthorizedStatusError(error: unknown): error is APIStatusError {
 }
 
 type MutableModelRequestTiming = { -readonly [K in keyof ModelRequestTiming]: ModelRequestTiming[K] };
+
+function mergeRequestHeaders(
+  auth: ProviderRequestAuth | undefined,
+  headers: Readonly<Record<string, string>> | undefined,
+): ProviderRequestAuth | undefined {
+  if (headers === undefined || Object.keys(headers).length === 0) return auth;
+  return {
+    ...auth,
+    headers: { ...headers, ...auth?.headers },
+  };
+}
 
 export function buildStreamTiming(
   requestStartedAt: number,
