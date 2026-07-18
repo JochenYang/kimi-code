@@ -217,7 +217,11 @@ export class ProtocolAdapterRegistry implements IProtocolAdapterRegistry {
     const endpoint: LlmEndpoint = {
       ...base.endpoint,
       baseUrl: connection.baseUrl,
-      headers: mergeHeaders(route.defaultHeaders?.({ model: connection }), connection.defaultHeaders),
+      headers: mergeHeaders(
+        route.defaultHeaders?.({ model: connection }),
+        connection.defaultHeaders,
+        params?.headers,
+      ),
       credentials: {
         resolve: async () => {
           const credential = await model.credentialProvider?.resolve();
