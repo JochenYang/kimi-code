@@ -648,6 +648,8 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       budget: resolveCompletionBudget({
         maxOutputSize: overrides.maxOutputSize ?? resolved.maxOutputSize,
         reservedContextSize: resolved.reservedContextSize,
+        // From [model_overrides] and/or KIMI_MODEL_MAX_COMPLETION_TOKENS env overlay.
+        // <= 0 opts out of clamping (no max_tokens on the wire).
         maxCompletionTokensCap:
           this.config.get<ModelOverrides>('modelOverrides')?.maxCompletionTokens,
       }),
