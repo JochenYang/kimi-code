@@ -16,7 +16,12 @@ import { IConfigService } from '#/app/config/config';
 import { AgentErrorEvent } from '#/agent/mcp/mcpEvents';
 import { type FinishReason } from '#/kosong/contract/provider';
 import { mergeInPlace, type ContentPart, type StreamedMessagePart } from '#/kosong/contract/message';
-import { type TokenUsage } from '#/kosong/contract/usage';
+import {
+  addUsage,
+  cacheUsageTelemetryFields,
+  emptyUsage,
+  type TokenUsage,
+} from '#/kosong/contract/usage';
 import { BugIndicatingError, ErrorCodes, Error2, isError2, toKimiErrorPayload } from '#/errors';
 import { OrderedHookSlot } from '#/hooks';
 
@@ -25,6 +30,7 @@ import { isVacuousContentPart } from '#/agent/contextMemory/vacuousContent';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
 import type {
+  StepUsageEvent,
   TurnEndedEvent as TurnEndedTelemetryEvent,
   TurnInterruptedEvent,
   TurnStartedEvent as TurnStartedTelemetryEvent,
@@ -102,6 +108,8 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
   private readonly settleWaiters: Array<() => void> = [];
   private quiescenceDepth = 0;
   private activeRequestTrace: LLMRequestTrace | undefined;
+  /** Live-only aggregate of step TokenUsage for the in-flight turn (telemetry). */
+  private turnUsage: TokenUsage = emptyUsage();
 
   constructor(
     @IAgentContextMemoryService private readonly context: IAgentContextMemoryService,
@@ -492,6 +500,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
   ): Promise<TurnResult> {
     const startedAt = Date.now();
     this.telemetry.setContext({ turn_id: turn.id });
+    this.turnUsage = emptyUsage();
     const { mode, provider_type, protocol } = this.telemetry.getContext();
     let thinkingEffort: string | undefined;
     let result: TurnResult | undefined;
@@ -555,6 +564,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
           this.telemetry.track2('turn_interrupted', interrupted);
         }
       }
+      const cacheFields = cacheUsageTelemetryFields(this.turnUsage);
       const ended: TurnEndedTelemetryEvent = {
         turn_id: turn.id,
         reason: result?.type ?? 'failed',
@@ -563,9 +573,16 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         provider_type,
         protocol,
         trace_id: traceId,
+        input_tokens: cacheFields.input_tokens,
+        input_cache_read: cacheFields.input_cache_read,
+        input_cache_creation: cacheFields.input_cache_creation,
+        input_other: cacheFields.input_other,
+        cache_hit_ratio: cacheFields.cache_hit_ratio,
+        output_tokens: this.turnUsage.output,
       };
       this.telemetry.track2('turn_ended', ended);
       this.telemetry.setContext({ turn_id: undefined, trace_id: undefined, thinking_effort: undefined });
+      this.turnUsage = emptyUsage();
       this.activeRequestTrace = undefined;
       this.lastRequestTraceId = undefined;
       this.pumpTurns();
@@ -1118,6 +1135,20 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         rawFinishReason: response.rawFinishReason,
       }),
     );
+    this.turnUsage = addUsage(this.turnUsage, usage);
+    const cacheFields = cacheUsageTelemetryFields(usage);
+    const stepUsage: StepUsageEvent = {
+      turn_id: turnId,
+      step_no: step,
+      input_tokens: cacheFields.input_tokens,
+      input_cache_read: cacheFields.input_cache_read,
+      input_cache_creation: cacheFields.input_cache_creation,
+      input_other: cacheFields.input_other,
+      cache_hit_ratio: cacheFields.cache_hit_ratio,
+      output_tokens: usage.output,
+      trace_id: response.traceId ?? this.activeRequestTrace?.traceId,
+    };
+    this.telemetry.track2('step_usage', stepUsage);
   }
 
   private emitStepInterrupted(

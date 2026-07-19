@@ -1128,3 +1128,41 @@ describe('AgentToolSelectService loadable-tools announcements', () => {
     expect(await announce(h)).toBeUndefined();
   });
 });
+
+describe('post-compaction dynamic tool hot-reload', () => {
+  it('reloads recently used MCP tools after compaction.completed', () => {
+    flagEnabled = true;
+    const h = createHarness();
+    registerMcp(h, new StubMcpTool(MCP_ALPHA));
+    registerMcp(h, new StubMcpTool(MCP_BETA));
+    const select = h.ix.get(IAgentToolSelectService);
+    select.recordRecentToolUse(MCP_ALPHA);
+    select.recordRecentToolUse(MCP_BETA);
+
+    // Simulate full compaction clearing pending loaded schemas, then hot-reload.
+    h.eventBus.emit('compaction.completed', {
+      result: { compactedCount: 1, tokensBefore: 1, tokensAfter: 1 },
+    });
+
+    const reloaded = h.contextMemory.appended.filter(
+      (message) =>
+        message.origin?.kind === 'injection' && message.origin.variant === DYNAMIC_TOOL_SCHEMA_VARIANT,
+    );
+    expect(reloaded.length).toBeGreaterThanOrEqual(1);
+    const names = reloaded.flatMap((message) => message.tools?.map((tool) => tool.name) ?? []);
+    expect(names).toEqual(expect.arrayContaining([MCP_ALPHA, MCP_BETA]));
+  });
+
+  it('reloadRecentAfterCompaction is a no-op when the gate is closed', () => {
+    flagEnabled = false;
+    const h = createHarness();
+    registerMcp(h, new StubMcpTool(MCP_ALPHA));
+    const select = h.ix.get(IAgentToolSelectService);
+    select.recordRecentToolUse(MCP_ALPHA);
+    expect(select.reloadRecentAfterCompaction()).toEqual({
+      toLoad: [],
+      alreadyAvailable: [],
+      unknown: [],
+    });
+  });
+});

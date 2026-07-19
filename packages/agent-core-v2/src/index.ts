@@ -398,6 +398,7 @@ import '#/agent/toolSelect/flag';
 export * from '#/agent/tools/select-tools/select-tools';
 import '#/agent/tools/select-tools/selectToolsTool';
 export * from '#/agent/toolSelect/dynamicTools';
+export * from '#/agent/toolSelect/recentTools';
 export * from '#/agent/toolSelect/toolSelect';
 export * from '#/agent/toolSelect/toolSelectService';
 export * from '#/agent/toolSelect/toolSelectAnnouncements';
@@ -409,7 +410,6 @@ export * from '#/agent/toolPolicy/configSection';
 export * from '#/agent/toolPolicy/evaluate';
 export * from '#/agent/toolPolicy/toolPolicy';
 export * from '#/agent/toolPolicy/toolPolicyService';
-
 import '#/agent/task/configSection';
 export {
   resolveAgentTaskConfig,
@@ -646,6 +646,8 @@ export * from '#/agent/fullCompaction/compactionOps';
 export * from '#/agent/fullCompaction/types';
 export * from '#/agent/fullCompaction/contextRecovery';
 export * from '#/agent/fullCompaction/compactionInstruction';
+export * from '#/agent/fullCompaction/handoffStructure';
+import '#/agent/fullCompaction/microCompactionFlag';
 export * from '#/features/contextBudget/contextBudgetReminder';
 export * from '#/features/contextBudget/contextBudgetService';
 import '#/features/contextBudget/contextBudgetFeature';
@@ -732,6 +734,8 @@ export * from '#/agent/toolExecutor/toolHooks';
 export * from '#/agent/toolExecutor/toolExecutor';
 export * from '#/agent/toolExecutor/toolExecutorService';
 export * from '#/agent/toolResultTruncation/toolResultTruncation';
+export * from '#/agent/toolResultTruncation/tiers';
+import '#/agent/toolResultTruncation/toolResultTruncationService';
 import '#/agent/toolResultTruncation/toolResultTruncationService';
 import '#/agent/toolActivation/toolActivationService';
 import '#/agent/toolRegistry/toolContribution';

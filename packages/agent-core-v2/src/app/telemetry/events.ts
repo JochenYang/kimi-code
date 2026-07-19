@@ -81,6 +81,34 @@ export interface TurnEndedEvent {
   protocol?: string;
   thinking_effort?: string;
   trace_id?: string;
+  /** Aggregated turn input tokens (cache + miss). */
+  input_tokens?: number;
+  input_cache_read?: number;
+  input_cache_creation?: number;
+  input_other?: number;
+  /** input_cache_read / input_tokens, 0 when no input. */
+  cache_hit_ratio?: number;
+  output_tokens?: number;
+}
+
+export interface StepUsageEvent {
+  turn_id: number;
+  step_no: number;
+  input_tokens: number;
+  input_cache_read: number;
+  input_cache_creation: number;
+  input_other: number;
+  cache_hit_ratio: number;
+  output_tokens: number;
+  trace_id?: string;
+}
+
+export interface ToolArgsValidationFailedEvent {
+  turn_id: number;
+  tool_call_id: string;
+  tool_name: string;
+  reason: 'parse_failed' | 'schema_invalid';
+  trace_id?: string;
 }
 
 export interface PromptCacheProbeEvent {
@@ -214,6 +242,11 @@ export interface CompactionFinishedEvent {
   output_tokens?: number;
   input_cache_read?: number;
   input_cache_creation?: number;
+  input_other?: number;
+  cache_hit_ratio?: number;
+  handoff_ok?: boolean;
+  handoff_missing_count?: number;
+  working_set_evidence_count?: number;
   trace_id?: string;
   ahead_reminder_delivered: boolean;
   ahead_steps_count?: number;
@@ -631,6 +664,38 @@ export const telemetryEventDefinitions = {
       thinking_effort: 'Effective thinking effort the turn ran with',
       trace_id:
         'Trace id of the most recent LLM request in this turn; absent for non-Kimi protocols',
+      input_tokens: 'Aggregated input tokens for the turn (cache hit + miss + creation)',
+      input_cache_read: 'Aggregated prompt-cache read tokens for the turn',
+      input_cache_creation: 'Aggregated prompt-cache write tokens for the turn',
+      input_other: 'Aggregated non-cache input tokens for the turn',
+      cache_hit_ratio: 'input_cache_read / input_tokens for the turn (0 when no input)',
+      output_tokens: 'Aggregated output tokens for the turn',
+    },
+  }),
+  step_usage: defineTelemetryEvent<StepUsageEvent>({
+    owner: 'kimi-code',
+    comment: 'Token and prompt-cache usage for a completed LLM step.',
+    properties: {
+      turn_id: 'Per-agent turn index',
+      step_no: 'Step index within the turn',
+      input_tokens: 'Total input tokens for the step',
+      input_cache_read: 'Prompt-cache hit tokens',
+      input_cache_creation: 'Prompt-cache write tokens',
+      input_other: 'Non-cache input tokens',
+      cache_hit_ratio: 'input_cache_read / input_tokens (0 when no input)',
+      output_tokens: 'Output tokens for the step',
+      trace_id: 'Trace id of the LLM request when available',
+    },
+  }),
+  tool_args_validation_failed: defineTelemetryEvent<ToolArgsValidationFailedEvent>({
+    owner: 'kimi-code',
+    comment: 'A tool call failed argument JSON parse or schema validation before execution.',
+    properties: {
+      turn_id: 'Per-agent turn index',
+      tool_call_id: 'Provider-assigned tool call id',
+      tool_name: 'Registered tool name',
+      reason: 'Whether JSON parse failed or schema validation rejected the args',
+      trace_id: 'Trace id of the producing LLM request when available',
     },
   }),
   prompt_cache_probe: defineAgentTelemetryEvent<PromptCacheProbeEvent>({
@@ -800,6 +865,11 @@ export const telemetryEventDefinitions = {
       output_tokens: 'Output tokens',
       input_cache_read: 'Cache-read input tokens',
       input_cache_creation: 'Cache-creation input tokens',
+      input_other: 'Non-cache input tokens from the summarizer request',
+      cache_hit_ratio: 'Summarizer cache hit ratio when usage is available',
+      handoff_ok: 'Whether the summary covered all required handoff sections',
+      handoff_missing_count: 'Count of missing structured handoff sections',
+      working_set_evidence_count: 'Failure or error evidence items retained post-compaction',
       trace_id:
         'Trace id of the final compaction request round; absent for non-Kimi protocols',
       ahead_reminder_delivered:

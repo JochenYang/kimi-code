@@ -30,3 +30,9 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
     inputCacheCreation: a.inputCacheCreation + b.inputCacheCreation,
   };
 }
+
+export {
+  cacheHitRatio,
+  cacheMissInputTokens,
+  cacheUsageTelemetryFields,
+} from './cacheMetrics';
