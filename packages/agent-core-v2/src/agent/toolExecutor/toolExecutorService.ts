@@ -193,6 +193,9 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
         this.unavailableToolDescriber,
         this.missingToolDescriber,
         this.log,
+        this.telemetry,
+        options.turnId,
+        options.trace?.traceId,
       ),
     );
     const preparedTasks: Array<{
@@ -736,6 +739,9 @@ function preflightToolCall(
   describeUnavailableTool: UnavailableToolDescriber | undefined,
   describeMissingTool: MissingToolDescriber | undefined,
   log?: ILogService,
+  telemetry?: ITelemetryService,
+  turnId?: number,
+  traceId?: string,
 ): PreflightedToolCall {
   const toolName = toolCall.name;
   const parsedArgs = parseToolCallArguments(toolCall.arguments);
@@ -745,6 +751,13 @@ function preflightToolCall(
       toolCallId: toolCall.id,
       rawLength: typeof toolCall.arguments === 'string' ? toolCall.arguments.length : 0,
       error: parsedArgs.error,
+    });
+    telemetry?.track2('tool_args_validation_failed', {
+      turn_id: turnId ?? 0,
+      tool_call_id: toolCall.id,
+      tool_name: toolName,
+      reason: 'parse_failed',
+      trace_id: traceId,
     });
   }
   const tool = toolRegistry.resolve(toolName);
@@ -780,6 +793,13 @@ function preflightToolCall(
   }
   const validationError = validateExecutableToolArgs(tool, parsedArgs.data);
   if (validationError !== null) {
+    telemetry?.track2('tool_args_validation_failed', {
+      turn_id: turnId ?? 0,
+      tool_call_id: toolCall.id,
+      tool_name: toolName,
+      reason: 'schema_invalid',
+      trace_id: traceId,
+    });
     return {
       kind: 'rejected',
       toolCall,
