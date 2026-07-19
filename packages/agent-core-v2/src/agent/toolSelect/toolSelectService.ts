@@ -2,6 +2,7 @@ import { Service } from '#/_base/di/service';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { abortable } from '#/_base/utils/abort';
+import { IEventBus } from '#/app/event/eventBus';
 import { IFlagService } from '#/app/flag/flag';
 import type { ToolDescription as Tool } from '@moonshot-ai/core/llm/message';
 import { AgentSpaceImpl } from '#/agent/agentContext/agentSpace';
@@ -9,6 +10,7 @@ import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentReminderService } from '#/features/reminder/reminderService';
 import { wrapSystemReminder } from '#/features/reminder/systemReminder';
 import { IAgentLoopService } from '#/agent/loop/loop';
+import { CompactionCompleted } from '#/agent/fullCompaction/compactionOps';
 import { IAgentToolPolicyService } from '#/agent/toolPolicy/toolPolicy';
 import { isMcpToolName, type ToolInfo } from '#/tool/toolContract';
 import { toLegacyToolReturn } from '#/tool/executor';
@@ -31,6 +33,7 @@ import {
   shapeUnsupportedDynamicToolContext,
 } from './dynamicTools';
 import { TOOL_SELECT_FLAG_ID } from './flag';
+import { RecentDynamicToolTracker } from './recentTools';
 import {
   IAgentToolSelectService,
   SELECT_TOOLS_TOOL_NAME,
@@ -57,6 +60,7 @@ const EMPTY_TOOL_PARAMETERS: Record<string, unknown> = {
 
 export class AgentToolSelectService extends Service implements IAgentToolSelectService {
   declare readonly _serviceBrand: undefined;
+  private readonly recentDynamic = new RecentDynamicToolTracker();
 
   private reconcileTail: Promise<void> = Promise.resolve();
   private readonly notifiedUpdates = new Set<string>();
@@ -73,6 +77,7 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
     @ISessionMcpHandle private readonly mcpHandle: ISessionMcpHandle,
     @IAgentReminderService private readonly reminder: IAgentReminderService,
+    @IEventBus eventBus: IEventBus,
   ) {
     super();
     this.states.contributeState(toolSelectKey);
@@ -95,10 +100,18 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
           : runLegacyStarting(context, (event) => event.veto({ output: text, isError: true }));
       },
       afterExecute: (context) => {
+        this.recordRecentToolUse(context.call.name);
         const text = this.describeMissingTool(context.call.name);
         return text === undefined ? undefined : legacyRejectedResult(context, text);
       },
     }));
+    this._register(
+      eventBus.subscribe(CompactionCompleted, () => {
+        // Hot-reload recently used MCP schemas so the model does not cold-start
+        // select_tools after every full compaction.
+        this.reloadRecentAfterCompaction();
+      }),
+    );
   }
 
   private history(): readonly ContextMessage[] {
@@ -531,6 +544,38 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
       for (const tool of message.tools ?? []) names.add(tool.name);
     }
     return names;
+  }
+
+  recordRecentToolUse(name: string): void {
+    if (!this.enabled()) return;
+    const source = this.toolRegistry.list().find((info) => info.name === name)?.source;
+    if (source !== 'mcp') return;
+    this.recentDynamic.record(name);
+  }
+
+  reloadRecentAfterCompaction(max: number = 8): LoadToolsResult {
+    if (!this.enabled()) {
+      return {
+        toLoad: [],
+        alreadyAvailable: [],
+        alreadyCallable: [],
+        unknown: [],
+        suggestions: {},
+        loadable: [],
+      };
+    }
+    const recent = this.recentDynamic.recent(max);
+    if (recent.length === 0) {
+      return {
+        toLoad: [],
+        alreadyAvailable: [],
+        alreadyCallable: [],
+        unknown: [],
+        suggestions: {},
+        loadable: [],
+      };
+    }
+    return this.load(recent);
   }
 
   private loadableToolNames(): string[] {
