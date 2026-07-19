@@ -24,6 +24,7 @@ import {
   stripDynamicToolContext,
 } from './dynamicTools';
 import { TOOL_SELECT_FLAG_ID } from './flag';
+import { RecentDynamicToolTracker } from './recentTools';
 import {
   IAgentToolSelectService,
   SELECT_TOOLS_TOOL_NAME,
@@ -40,6 +41,7 @@ const STOP_RETRY_THRESHOLD = 2;
 
 export class AgentToolSelectService extends Service implements IAgentToolSelectService {
   declare readonly _serviceBrand: undefined;
+  private readonly recentDynamic = new RecentDynamicToolTracker();
 
   constructor(
     @IAgentToolRegistryService private readonly toolRegistry: IAgentToolRegistryService,
@@ -60,8 +62,17 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
       toolExecutor.registerMissingToolDescriber((name) => this.describeMissingTool(name)),
     );
     this._register(
+      toolExecutor.hooks.onDidExecuteTool.register('toolSelectRecent', async (ctx, next) => {
+        this.recordRecentToolUse(ctx.toolCall.name);
+        await next();
+      }),
+    );
+    this._register(
       eventBus.subscribe(CompactionCompleted, () => {
         this.pendingLoaded.clear();
+        // Hot-reload recently used MCP schemas so the model does not cold-start
+        // select_tools after every full compaction.
+        this.reloadRecentAfterCompaction();
       }),
     );
     this._register(
@@ -217,6 +228,38 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
       tools.push(tool);
     }
     return tools.length === 0 ? undefined : tools;
+  }
+
+  recordRecentToolUse(name: string): void {
+    if (!this.enabled()) return;
+    const source = this.toolRegistry.list().find((info) => info.name === name)?.source;
+    if (source !== 'mcp') return;
+    this.recentDynamic.record(name);
+  }
+
+  reloadRecentAfterCompaction(max: number = 8): LoadToolsResult {
+    if (!this.enabled()) {
+      return {
+        toLoad: [],
+        alreadyAvailable: [],
+        alreadyCallable: [],
+        unknown: [],
+        suggestions: {},
+        loadable: [],
+      };
+    }
+    const recent = this.recentDynamic.recent(max);
+    if (recent.length === 0) {
+      return {
+        toLoad: [],
+        alreadyAvailable: [],
+        alreadyCallable: [],
+        unknown: [],
+        suggestions: {},
+        loadable: [],
+      };
+    }
+    return this.load(recent);
   }
 
   loadableToolsAnnouncement(): string | undefined {
