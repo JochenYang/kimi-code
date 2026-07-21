@@ -62,7 +62,13 @@ export interface AppState {
   contextUsage: number;
   contextTokens: number;
   maxContextTokens: number;
-  cumulativeTokens?: number;
+cumulativeTokens?: number;
+  /**
+   * Output tokens/sec from the most recent completed LLM step that had a
+   * measurable stream window. `null` until the first such step finishes (or
+   * after a session reset). Shown in the footer ahead of the context readout.
+   */
+  lastTokenSpeed: number | null;
   isCompacting: boolean;
   isReplaying: boolean;
   streamingPhase: 'idle' | 'waiting' | 'thinking' | 'composing' | 'shell';

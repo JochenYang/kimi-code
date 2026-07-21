@@ -1,6 +1,45 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
+import {
+  computeOutputTokensPerSecond,
+  formatStepDebugTiming,
+  MIN_STREAM_MS_FOR_TPS,
+} from '#/utils/usage/debug-timing';
+
+describe('computeOutputTokensPerSecond', () => {
+  it('returns undefined when stream duration or output is missing', () => {
+    expect(computeOutputTokensPerSecond({})).toBeUndefined();
+    expect(computeOutputTokensPerSecond({ llmStreamDurationMs: 1000 })).toBeUndefined();
+    expect(computeOutputTokensPerSecond({ usage: { output: 100 } })).toBeUndefined();
+    expect(
+      computeOutputTokensPerSecond({ llmStreamDurationMs: 1000, usage: { output: 0 } }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the stream window is below the reliability threshold', () => {
+    expect(
+      computeOutputTokensPerSecond({
+        llmStreamDurationMs: MIN_STREAM_MS_FOR_TPS - 1,
+        usage: { output: 44 },
+      }),
+    ).toBeUndefined();
+  });
+
+  it('returns output tokens per second once the stream window is measurable', () => {
+    expect(
+      computeOutputTokensPerSecond({
+        llmStreamDurationMs: 5000,
+        usage: { output: 200 },
+      }),
+    ).toBe(40);
+    expect(
+      computeOutputTokensPerSecond({
+        llmStreamDurationMs: MIN_STREAM_MS_FOR_TPS,
+        usage: { output: 20 },
+      }),
+    ).toBe(400);
+  });
+});
 
 describe('formatStepDebugTiming', () => {
   it('returns undefined when timing fields are missing', () => {
