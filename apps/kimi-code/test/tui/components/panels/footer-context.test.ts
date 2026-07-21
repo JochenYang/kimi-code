@@ -30,6 +30,7 @@ function baseState(overrides: Partial<AppState> = {}): AppState {
     contextUsage: 0,
     contextTokens: 0,
     maxContextTokens: 0,
+    lastTokenSpeed: null,
     isCompacting: false,
     isReplaying: false,
     streamingPhase: 'idle',
@@ -128,6 +129,28 @@ describe('FooterComponent — context NaN resilience', () => {
     const [, line2] = footer.render(120);
     expect(strip(line2 ?? '')).toContain('Press Ctrl-C again to exit');
     expect(strip(line2 ?? '')).toContain('context: 0%');
+  });
+
+  it('prefixes last token speed before the context readout', () => {
+    const footer = new FooterComponent(
+      baseState({
+        lastTokenSpeed: 99.6,
+        contextUsage: 0.1,
+        contextTokens: 10_240,
+        maxContextTokens: 102_400,
+      }),
+    );
+    const out = strip(footer.render(200).join(''));
+    expect(out).toMatch(/100 tok\/s\s+context: 10% \(10k\/100k\)/);
+  });
+
+  it('omits token speed when lastTokenSpeed is null or non-positive', () => {
+    for (const lastTokenSpeed of [null, 0, -1, Number.NaN] as const) {
+      const footer = new FooterComponent(baseState({ lastTokenSpeed }));
+      const out = strip(footer.render(120).join(''));
+      expect(out).not.toMatch(/tok\/s/);
+      expect(out).toMatch(/context: 0%/);
+    }
   });
 
   it('highlights the pull request badge separately from git status text', () => {
