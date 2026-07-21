@@ -21,6 +21,7 @@ function fakeInitialAppState(): AppState {
     contextUsage: 0,
     contextTokens: 0,
     maxContextTokens: 0,
+    lastTokenSpeed: null,
     isCompacting: false,
     isReplaying: false,
     streamingPhase: 'idle',
