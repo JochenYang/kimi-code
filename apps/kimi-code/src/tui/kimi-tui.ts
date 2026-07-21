@@ -291,7 +291,8 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     contextUsage: 0,
     contextTokens: 0,
     maxContextTokens: 0,
-    cumulativeTokens: 0,
+cumulativeTokens: 0,
+    lastTokenSpeed: null,
     isCompacting: false,
     isReplaying: false,
     streamingPhase: 'idle',
@@ -3140,7 +3141,7 @@ export class KimiTUI {
     this.state.footer.setBackgroundCounts({ bashTasks: 0, agentTasks: 0 });
     this.sessionEventHandler.notifications.clear();
     this.streamingUI.setTurnId(undefined);
-    this.setAppState({ mcpServersSummary: null });
+    this.setAppState({ mcpServersSummary: null, lastTokenSpeed: null });
     this.streamingUI.setStep(0);
     this.streamingUI.resetLiveText();
     this.updateQueueDisplay();
