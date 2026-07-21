@@ -33,7 +33,29 @@ export interface StepTimingInput {
 // drain in 1ms), so dividing output tokens by it would report inflated rates
 // like tens of thousands of tok/s. In that case we report the raw counts
 // instead of a meaningless ratio.
-const MIN_STREAM_MS_FOR_TPS = 50;
+export const MIN_STREAM_MS_FOR_TPS = 50;
+
+/**
+ * Output tokens per second from a completed LLM step. Returns `undefined`
+ * when the step has no usable output usage or the decode window is too short
+ * to measure reliably (see {@link MIN_STREAM_MS_FOR_TPS}).
+ */
+export function computeOutputTokensPerSecond(input: {
+  readonly llmStreamDurationMs?: number;
+  readonly usage?: DebugTokenUsage;
+}): number | undefined {
+  const streamMs = input.llmStreamDurationMs;
+  const outputTokens = input.usage?.output;
+  if (
+    streamMs === undefined ||
+    streamMs < MIN_STREAM_MS_FOR_TPS ||
+    outputTokens === undefined ||
+    outputTokens <= 0
+  ) {
+    return undefined;
+  }
+  return outputTokens / (streamMs / 1000);
+}
 
 export function formatStepDebugTiming(input: StepTimingInput): string | undefined {
   const latency = input.llmFirstTokenLatencyMs;
@@ -43,10 +65,10 @@ export function formatStepDebugTiming(input: StepTimingInput): string | undefine
   const parts: string[] = [`TTFT: ${formatTtft(input)}`];
   const outputTokens = input.usage?.output;
   if (outputTokens !== undefined && outputTokens > 0) {
-    if (streamMs >= MIN_STREAM_MS_FOR_TPS) {
-      const tps = (outputTokens / (streamMs / 1000)).toFixed(1);
+    const tps = computeOutputTokensPerSecond(input);
+    if (tps !== undefined) {
       parts.push(
-        `TPS: ${tps} tok/s (${outputTokens} tokens in ${formatDuration(streamMs)}${formatDecodeSplit(input)})`,
+        `TPS: ${tps.toFixed(1)} tok/s (${outputTokens} tokens in ${formatDuration(streamMs)}${formatDecodeSplit(input)})`,
       );
     } else {
       parts.push(

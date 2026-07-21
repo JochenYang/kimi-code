@@ -2,8 +2,8 @@
  * Footer/status bar — multi-line status display at the bottom of the TUI.
  *
  * Layout:
- *   Line 1: [Ask When Needed] [plan] <model> <cwd>  <git-badge>  <shortcut hints>
- *   Line 2: context: N% (tokens/max)
+*   Line 1: [Ask When Needed] [plan] <model> <cwd>  <git-badge>  <shortcut hints>
+ *   Line 2: [<N tok/s>] context: N% (tokens/max)
  */
 
 import type { Component } from '@moonshot-ai/pi-tui';
@@ -169,14 +169,31 @@ function shortenCwd(path: string): string {
  * Footer context readout. Percent comes from the exact token counts when
  * both are known (the ratio can lag a step behind); otherwise it falls
  * back to the precomputed ratio. Counts use the shared 1024-based
- * formatter.
+ * formatter. When `lastTokenSpeed` is set, the previous step's output
+ * rate is shown ahead of the context block.
  */
-function formatContextStatus(usage: number, tokens?: number, maxTokens?: number): string {
+function formatContextStatus(
+  usage: number,
+  tokens?: number,
+  maxTokens?: number,
+  lastTokenSpeed?: number | null,
+): string {
+  let context: string;
   if (maxTokens !== undefined && maxTokens > 0 && tokens !== undefined) {
     const pct = String(usagePercent(tokens, maxTokens));
-    return `context: ${pct}% (${formatTokenCount(tokens)}/${formatTokenCount(maxTokens)})`;
+    context = `context: ${pct}% (${formatTokenCount(tokens)}/${formatTokenCount(maxTokens)})`;
+  } else {
+    context = `context: ${String(usagePercentFromRatio(usage))}%`;
   }
-  return `context: ${String(usagePercentFromRatio(usage))}%`;
+  if (
+    lastTokenSpeed !== null &&
+    lastTokenSpeed !== undefined &&
+    Number.isFinite(lastTokenSpeed) &&
+    lastTokenSpeed > 0
+  ) {
+    return `${Math.round(lastTokenSpeed)} tok/s  ${context}`;
+  }
+  return context;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {
@@ -343,6 +360,7 @@ export class FooterComponent implements Component {
       state.contextUsage,
       state.contextTokens,
       state.maxContextTokens,
+      state.lastTokenSpeed,
     );
     const contextWidth = visibleWidth(contextText);
     let line2: string;
