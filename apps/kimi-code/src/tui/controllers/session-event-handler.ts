@@ -70,7 +70,10 @@ import { openUrl } from '#/utils/open-url';
 import { currentTheme } from '#/tui/theme';
 import type { ColorToken } from '#/tui/theme';
 import { errorReportHintLine } from '../constant/feedback';
-import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
+import {
+  computeOutputTokensPerSecond,
+  formatStepDebugTiming,
+} from '#/utils/usage/debug-timing';
 import { isTurnPromptEvent, isTurnSteerEvent, isUserSteerOrigin } from '../utils/steer-delivery';
 import { nextTranscriptId } from '../utils/transcript-id';
 import { isToolCallId } from '../utils/turn-timeline';
@@ -492,6 +495,8 @@ export class SessionEventHandler {
     this.host.streamingUI.flushNow();
     this.clearStepRetry();
     this.host.recordSessionActivity();
+    this.host.noteStepUsage(event.usage);
+    this.maybeUpdateTokenSpeed(event);
     this.maybeShowDebugTiming(event);
 
     if (event.providerFinishReason === 'filtered') {
@@ -554,6 +559,12 @@ export class SessionEventHandler {
       clearTimeout(this.stepRetryAttemptTimer);
       this.stepRetryAttemptTimer = undefined;
     }
+  }
+
+  private maybeUpdateTokenSpeed(event: TurnStepCompletedEvent): void {
+    const tps = computeOutputTokensPerSecond(event);
+    if (tps === undefined) return;
+    this.host.setAppState({ lastTokenSpeed: tps });
   }
 
   private maybeShowDebugTiming(event: TurnStepCompletedEvent): void {
