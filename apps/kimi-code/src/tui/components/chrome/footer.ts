@@ -152,12 +152,28 @@ function shortenCwd(path: string, home: string | undefined): string {
   return `…/${tail}`;
 }
 
-function formatContextStatus(usage: number, tokens?: number, maxTokens?: number): string {
+function formatContextStatus(
+  usage: number,
+  tokens?: number,
+  maxTokens?: number,
+  lastTokenSpeed?: number | null,
+): string {
+  let context: string;
   if (maxTokens !== undefined && maxTokens > 0 && tokens !== undefined) {
     const pct = String(usagePercent(tokens, maxTokens));
-    return `context: ${pct}% (${formatTokenCount(tokens)}/${formatTokenCount(maxTokens)})`;
+    context = `context: ${pct}% (${formatTokenCount(tokens)}/${formatTokenCount(maxTokens)})`;
+  } else {
+    context = `context: ${String(usagePercentFromRatio(usage))}%`;
   }
-  return `context: ${String(usagePercentFromRatio(usage))}%`;
+  if (
+    lastTokenSpeed !== null &&
+    lastTokenSpeed !== undefined &&
+    Number.isFinite(lastTokenSpeed) &&
+    lastTokenSpeed > 0
+  ) {
+    return `${Math.round(lastTokenSpeed)} tok/s  ${context}`;
+  }
+  return context;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {
@@ -333,6 +349,7 @@ export class FooterComponent implements Component {
       state.contextUsage,
       state.contextTokens,
       state.maxContextTokens,
+      state.lastTokenSpeed,
     );
     const contextWidth = visibleWidth(contextText);
     let line2: string;

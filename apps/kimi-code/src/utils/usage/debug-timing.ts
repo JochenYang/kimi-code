@@ -18,7 +18,24 @@ export interface StepTimingInput {
   readonly usage?: DebugTokenUsage;
 }
 
-const MIN_STREAM_MS_FOR_TPS = 50;
+export const MIN_STREAM_MS_FOR_TPS = 50;
+
+export function computeOutputTokensPerSecond(input: {
+  readonly llmStreamDurationMs?: number;
+  readonly usage?: DebugTokenUsage;
+}): number | undefined {
+  const streamMs = input.llmStreamDurationMs;
+  const outputTokens = input.usage?.output;
+  if (
+    streamMs === undefined ||
+    streamMs < MIN_STREAM_MS_FOR_TPS ||
+    outputTokens === undefined ||
+    outputTokens <= 0
+  ) {
+    return undefined;
+  }
+  return outputTokens / (streamMs / 1000);
+}
 
 export function formatStepDebugTiming(input: StepTimingInput): string | undefined {
   const latency = input.llmFirstTokenLatencyMs;
