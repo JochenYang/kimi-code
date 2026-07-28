@@ -334,6 +334,14 @@ export const BUILTIN_SLASH_COMMANDS = [
     },
   },
   {
+    name: 'deep-research',
+    aliases: [],
+    description: 'Run a deep research workflow: plan, gather evidence, verify, and produce a cited report',
+    priority: 80,
+    argumentHint: '<query>',
+    availability: 'idle-only',
+  },
+  {
     name: 'init',
     aliases: [],
     description: 'Analyze the codebase and generate AGENTS.md',

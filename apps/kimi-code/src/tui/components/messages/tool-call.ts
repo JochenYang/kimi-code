@@ -101,6 +101,10 @@ export interface ToolCallSubagentSnapshot {
   readonly phase: SubagentPhase | undefined;
   readonly toolCount: number;
   readonly elapsedSeconds: number | undefined;
+  /** Wall-clock start of this subagent card; used by AgentGroup run-level elapsed. */
+  readonly startedAtMs: number | undefined;
+  /** Wall-clock end once terminal; undefined while still active. */
+  readonly endedAtMs: number | undefined;
   readonly tokens: number;
   readonly isError: boolean;
   readonly errorText: string | undefined;
@@ -925,6 +929,8 @@ export class ToolCallComponent extends Container {
       phase: derivedPhase,
       toolCount: finished,
       elapsedSeconds: this.getSubagentElapsedSeconds(),
+      startedAtMs: this.subagentStartedAtMs,
+      endedAtMs: this.subagentEndedAtMs,
       tokens,
       isError: derivedPhase === 'failed',
       errorText,

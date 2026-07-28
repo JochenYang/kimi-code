@@ -27,6 +27,7 @@ import {
 import { handleLoginCommand, handleLogoutCommand } from './auth';
 import { handleBtwCommand } from './btw';
 import { handleCopyCommand } from './copy';
+import { handleDeepResearchCommand } from './deep-research';
 import {
   handleCompactCommand,
   handleEditorCommand,
@@ -581,6 +582,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'goal':
       await handleGoalCommand(host, args);
+      return;
+    case 'deep-research':
+      await handleDeepResearchCommand(host, args);
       return;
     case 'init':
       await handleInitCommand(host);

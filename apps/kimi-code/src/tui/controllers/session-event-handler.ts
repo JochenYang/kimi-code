@@ -967,6 +967,13 @@ export class SessionEventHandler {
   }
 
   private handleSessionWarning(event: WarningEvent): void {
+    // Deep-research phase progress is emitted as a warning event so it survives
+    // the in-process RPC JSON clone (function callbacks are stripped). Do not
+    // prefix it as a generic "Warning:".
+    if (event.code === 'deep-research-progress') {
+      this.host.showStatus(event.message);
+      return;
+    }
     this.host.showStatus(`Warning: ${event.message}`, 'warning');
   }
 
