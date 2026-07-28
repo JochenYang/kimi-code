@@ -36,4 +36,5 @@ export {
 } from './schemas';
 export { buildPlanPrompt, buildResearchPrompt, buildVerifyPrompt, buildSynthesisPrompt } from './prompts';
 export { buildFullReport, buildChatReport } from './report-builder';
+export { formatDeepResearchHandoff, DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS } from './handoff';
 export { validateCitations, extractReportBody, isValidClaim } from './utils';

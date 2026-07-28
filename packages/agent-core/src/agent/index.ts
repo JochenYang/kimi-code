@@ -38,6 +38,7 @@ import { ContextMemory } from './context';
 import {
   DeepResearchOrchestrator,
   createDeepResearchHost,
+  formatDeepResearchHandoff,
   DEEP_RESEARCH_MAX_QUERY_LENGTH,
 } from './deep-research';
 import { GoalMode } from './goal';
@@ -792,6 +793,15 @@ export class Agent {
             phase: 'Done',
             detail: `status=${result.status}; report=${result.reportPath ?? '(in-memory)'}`,
           });
+          // Handoff into main context so the next user turn can continue from
+          // the research (summary + report path). Cancelled runs skip this.
+          // Does not start a turn — only appends for the following prompt.
+          if (result.status !== 'cancelled') {
+            this.context.appendSystemReminder(formatDeepResearchHandoff(result, query), {
+              kind: 'injection',
+              variant: 'deep_research_handoff',
+            });
+          }
           return result;
         } catch (error) {
           reportProgress({
