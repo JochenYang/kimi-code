@@ -6,12 +6,17 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { DeepResearchOrchestrator } from '../../src/agent/deep-research';
+import {
+  DeepResearchOrchestrator,
+  formatDeepResearchHandoff,
+  DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS,
+} from '../../src/agent/deep-research';
 import type {
   DeepResearchHost,
   DeepResearchAgentCall,
   DeepResearchAgentOutcome,
   DeepResearchProgress,
+  DeepResearchResult,
 } from '../../src/agent/deep-research';
 
 // ── Fake host ────────────────────────────────────────────────────────────────
@@ -270,5 +275,54 @@ describe('DeepResearchOrchestrator', () => {
     const result = await orchestrator.run(new AbortController().signal);
 
     expect(result.report).toContain('## Coverage and uncertainty');
+  });
+});
+
+describe('formatDeepResearchHandoff', () => {
+  function makeResult(overrides: Partial<DeepResearchResult> = {}): DeepResearchResult {
+    return {
+      status: 'verified',
+      report: '# Full\n\nlong body',
+      chatReport: 'Short cited summary [S1].',
+      reportPath: '/tmp/session/deep-research/abcd/report.md',
+      verifiedClaimIds: ['c1'],
+      coverageNotes: [],
+      questions: ['q1'],
+      runId: 'abcd1234',
+      ...overrides,
+    };
+  }
+
+  it('includes query, status, summary, and report path for follow-up Read', () => {
+    const text = formatDeepResearchHandoff(makeResult(), 'Compare X and Y');
+    expect(text).toContain('Deep research finished');
+    expect(text).toContain('Query: Compare X and Y');
+    expect(text).toContain('Status: verified');
+    expect(text).toContain('Short cited summary [S1].');
+    expect(text).toContain('Full report path: /tmp/session/deep-research/abcd/report.md');
+    expect(text).toContain('Read tool');
+  });
+
+  it('mentions coverage note count when present', () => {
+    const text = formatDeepResearchHandoff(
+      makeResult({ status: 'partial', coverageNotes: ['gap a', 'gap b'] }),
+      'query',
+    );
+    expect(text).toContain('Status: partial');
+    expect(text).toContain('2 coverage note(s)');
+  });
+
+  it('truncates a long chatReport and points at the full report', () => {
+    const long = 'x'.repeat(DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS + 50);
+    const text = formatDeepResearchHandoff(makeResult({ chatReport: long }), 'q');
+    expect(text.length).toBeLessThan(long.length + 500);
+    expect(text).toContain('…(truncated');
+    expect(text).toContain('Full report path:');
+  });
+
+  it('omits path guidance when reportPath is null', () => {
+    const text = formatDeepResearchHandoff(makeResult({ reportPath: null }), 'q');
+    expect(text).not.toContain('Full report path:');
+    expect(text).toContain('Status: verified');
   });
 });
