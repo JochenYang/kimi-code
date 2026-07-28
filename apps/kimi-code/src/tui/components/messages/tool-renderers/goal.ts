@@ -132,6 +132,24 @@ function goalToolLabel(
           : 'Setting goal budget';
     case 'UpdateGoal': {
       const status = stringArg(args, 'status');
+      if (status === 'complete') {
+        // In-flight: request only — independent review has not accepted yet.
+        if (!finished) return 'Requesting completion (awaiting evidence review)';
+        if (failed) return 'Could not complete goal';
+        const output = result?.output ?? '';
+        // Review rejected or timed out: goal stays active (not a final complete).
+        if (
+          /completion review did not pass|review rejected|not completed: evidence review|remains active/i.test(
+            output,
+          )
+        ) {
+          return 'Completion review rejected';
+        }
+        if (/completion review passed|completed successfully/i.test(output)) {
+          return 'Accepted goal complete';
+        }
+        return 'Reported goal complete';
+      }
       const suffix = status ?? 'status';
       return failed
         ? `Could not report goal ${suffix}`
