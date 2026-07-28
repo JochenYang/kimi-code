@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Agent } from '../../src/agent';
 import { GoalMode } from '../../src/agent/goal';
+import {
+  setGoalCompletionReviewerForTests,
+  type GoalCompletionReviewResult,
+} from '../../src/agent/goal/completion-review';
 import { ErrorCodes } from '../../src/errors';
 import { compileToolArgsValidator, validateToolArgs } from '../../src/tools/args-validator';
 import {
@@ -22,7 +26,22 @@ function makeStore() {
   return fakeAgent().goal;
 }
 
-function fakeAgent(opts: { type?: 'main' | 'sub'; goal?: GoalMode } = {}): Agent {
+function fakeSubagentHost() {
+  return {
+    spawn: async () => {
+      throw new Error('subagentHost.spawn should not run when reviewer is injected');
+    },
+  };
+}
+
+function fakeAgent(
+  opts: {
+    type?: 'main' | 'sub';
+    goal?: GoalMode;
+    /** When false, omit subagentHost (complete path should refuse). Default true. */
+    withSubagentHost?: boolean;
+  } = {},
+): Agent {
   const agent = {
     type: opts.type ?? 'main',
     records: { logRecord: () => {} },
@@ -30,10 +49,23 @@ function fakeAgent(opts: { type?: 'main' | 'sub'; goal?: GoalMode } = {}): Agent
     telemetry: { track: () => {} },
     context: { appendSystemReminder: () => {} },
     permission: { mode: 'manual' },
+    subagentHost: opts.withSubagentHost === false ? undefined : fakeSubagentHost(),
   } as unknown as Agent;
   (agent as { goal: GoalMode }).goal = opts.goal ?? new GoalMode(agent);
   return agent;
 }
+
+const PASSING_REVIEW: GoalCompletionReviewResult = {
+  passed: true,
+  evidence: 'tests green; objective files present',
+  gaps: [],
+};
+
+const FAILING_REVIEW: GoalCompletionReviewResult = {
+  passed: false,
+  evidence: 'todo still open',
+  gaps: ['close the remaining todo'],
+};
 
 function ctx<Input>(args: Input) {
   return { turnId: '0', toolCallId: 'call_1', args, signal };
@@ -250,15 +282,54 @@ describe('SetGoalBudgetTool', () => {
 });
 
 describe('UpdateGoalTool', () => {
+  afterEach(() => {
+    setGoalCompletionReviewerForTests(undefined);
+  });
+
+  it('guards against premature blocked status', () => {
+    const description = new UpdateGoalTool(fakeAgent()).description.toLowerCase();
+    // Reserve blocked for genuine impasses, not ordinary unfinished work.
+    expect(description).toContain('genuine impasse');
+    expect(description).toContain('3 consecutive goal turns');
+    expect(description).toContain('fresh blocked audit');
+    expect(description).toContain('impossible, unsafe, or contradictory');
+    expect(description).toContain('same turn instead of running more goal turns');
+    expect(description).toContain('hard, slow');
+    expect(description).toContain('needs more goal turns');
+    // UpdateGoal also injects the completion/blocked outcome prompt, so it does
+    // more than "only record the status".
+    expect(description).not.toContain('only records the status');
+  });
+
+  it('exposes the blocked-audit rule in the status parameter schema', () => {
+    const statusDescription =
+      ((new UpdateGoalTool(fakeAgent()).parameters as {
+        properties: Record<string, { description?: string }>;
+      }).properties['status']?.description) ?? '';
+    expect(statusDescription).toContain('3 consecutive goal turns');
+    expect(statusDescription).toContain('impossible, unsafe, or contradictory objectives');
+  });
+
+  it('discourages calling UpdateGoal after a non-terminal work slice', () => {
+    const description = new UpdateGoalTool(fakeAgent()).description;
+    expect(description).toContain('Most active goal turns should not call this tool');
+    expect(description).toContain('end the turn normally without calling UpdateGoal');
+    expect(description).toContain('actual objective and every explicit requirement');
+    expect(description).toContain('weak or indirect evidence');
+    expect(description).toContain('budget is nearly exhausted');
+  });
+
   // Keep a capturing context here to prove terminal paths no longer append a
   // separate reminder; the outcome prompt is returned as the tool result.
   function agentWithContext(
     store: GoalMode,
     reminders: Array<{ readonly content: string; readonly origin: unknown }> = [],
+    opts: { withSubagentHost?: boolean } = {},
   ): Agent {
     return {
       type: 'main',
       goal: store,
+      subagentHost: opts.withSubagentHost === false ? undefined : fakeSubagentHost(),
       context: {
         appendSystemReminder: (content: string, origin: unknown) => {
           reminders.push({ content, origin });
@@ -293,20 +364,89 @@ describe('UpdateGoalTool', () => {
     expect(store.getGoal().goal?.status).toBe('active');
   });
 
-  it('`complete` marks the goal complete and clears it (transient)', async () => {
+  it('`complete` marks the goal complete and clears it after a passing review', async () => {
+    setGoalCompletionReviewerForTests(async () => PASSING_REVIEW);
     const store = makeStore();
     const reminders: Array<{ readonly content: string; readonly origin: unknown }> = [];
     await store.createGoal({ objective: 'work' });
+    const tool = new UpdateGoalTool(agentWithContext(store, reminders));
+    const execution = tool.resolveExecution({ status: 'complete' });
+    if (execution.isError === true) throw new Error('execution should not be an error');
+    expect(execution.description).toContain('awaiting evidence review');
+
+    const result = await executeTool(tool, ctx({ status: 'complete' }));
+    expect(result.isError).toBeFalsy();
+    expect(result.stopTurn).toBe(true);
+    expect(result.output).toContain('Completion review passed.');
+    expect(result.output).toContain('Goal completed successfully.');
+    expect(result.output).toContain('Write a concise final message for the user');
+    expect(result.output).toContain('Independent review evidence:');
+    expect(store.getGoal().goal).toBeNull();
+    expect(reminders).toHaveLength(0);
+  });
+
+  it('`complete` keeps the goal active when evidence review rejects', async () => {
+    setGoalCompletionReviewerForTests(async () => FAILING_REVIEW);
+    const store = makeStore();
+    await store.createGoal({ objective: 'work' });
     const result = await executeTool(
-      new UpdateGoalTool(agentWithContext(store, reminders)),
+      new UpdateGoalTool(agentWithContext(store)),
       ctx({ status: 'complete' }),
     );
     expect(result.isError).toBeFalsy();
-    expect(result.stopTurn).toBe(true);
-    expect(result.output).toContain('Goal completed successfully.');
-    expect(result.output).toContain('Write a concise final message for the user');
-    expect(store.getGoal().goal).toBeNull();
-    expect(reminders).toHaveLength(0);
+    expect(result.stopTurn).toBeFalsy();
+    expect(result.output).toContain('Completion review did not pass');
+    expect(result.output).toContain('goal remains active');
+    expect(result.output).toContain('close the remaining todo');
+    expect(result.output).toContain('Do not immediately re-call');
+    expect(store.getGoal().goal?.status).toBe('active');
+  });
+
+  it('`complete` keeps the goal active when evidence review throws/times out', async () => {
+    setGoalCompletionReviewerForTests(async () => {
+      throw new Error('evidence review timed out or was aborted');
+    });
+    const store = makeStore();
+    await store.createGoal({ objective: 'work' });
+    const result = await executeTool(
+      new UpdateGoalTool(agentWithContext(store)),
+      ctx({ status: 'complete' }),
+    );
+    expect(result.isError).toBe(true);
+    expect(result.stopTurn).toBeFalsy();
+    expect(result.output).toMatch(/timed out|aborted/i);
+    expect(result.output).toContain('remains active');
+    expect(store.getGoal().goal?.status).toBe('active');
+  });
+
+  it('`complete` refuses without subagent support', async () => {
+    const store = makeStore();
+    await store.createGoal({ objective: 'work' });
+    const result = await executeTool(
+      new UpdateGoalTool(agentWithContext(store, [], { withSubagentHost: false })),
+      ctx({ status: 'complete' }),
+    );
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('completion review requires subagent support');
+    expect(result.output).toContain('remains active');
+    expect(store.getGoal().goal?.status).toBe('active');
+  });
+
+  it('rejects a second empty complete while gaps remain (goal stays active both times)', async () => {
+    setGoalCompletionReviewerForTests(async () => FAILING_REVIEW);
+    const store = makeStore();
+    await store.createGoal({ objective: 'work' });
+    const tool = new UpdateGoalTool(agentWithContext(store));
+
+    const first = await executeTool(tool, ctx({ status: 'complete' }));
+    expect(first.stopTurn).toBeFalsy();
+    expect(store.getGoal().goal?.status).toBe('active');
+
+    const second = await executeTool(tool, ctx({ status: 'complete' }));
+    expect(second.stopTurn).toBeFalsy();
+    expect(second.output).toContain('Completion review did not pass');
+    expect(store.getGoal().goal?.status).toBe('active');
+    expect(store.getGoal().goal).not.toBeNull();
   });
 
   it('`blocked` marks the goal blocked (resumable) and asks for a blocker reason', async () => {

@@ -151,7 +151,10 @@ function buildGoalReminder(goal: GoalSnapshot): string {
       'current state against the actual objective and every explicit requirement. Treat weak or ' +
       'indirect evidence as not complete. Do not mark complete after only producing a plan, ' +
       'summary, first pass, or partial result. Do not mark complete merely because a budget is ' +
-      'nearly exhausted or you want to stop. Blocked audit: do not call UpdateGoal with `blocked` ' +
+      'nearly exhausted or you want to stop. Host gate: `complete` always runs one independent ' +
+      'read-only evidence review; if it rejects, the goal stays active and you receive gaps — ' +
+      'fix those gaps before calling `complete` again; do not empty-retry complete. ' +
+      'Blocked audit: do not call UpdateGoal with `blocked` ' +
       'the first time you hit a blocker. Use `blocked` only for a genuine impasse: an external ' +
       'condition, required user input, missing credentials or permissions, or a persistent ' +
       'technical failure. For those non-terminal blockers, the same blocking condition must ' +

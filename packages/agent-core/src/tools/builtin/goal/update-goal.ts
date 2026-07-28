@@ -3,6 +3,9 @@
  * the goal's status directly; the turn driver reads the status at each turn
  * boundary and stops (`complete` / `blocked`) or keeps going (`active`).
  *
+ * Product gate for `complete`: one independent read-only evidence review; on
+ * failure the goal stays active (continue). No per-turn hidden panel.
+ *
  * The argument is intentionally just a status enum — no reason or evidence. The
  * model explains itself in its own reply; the status is the machine-readable
  * signal. The tool stays visible to the main agent even when no goal is active;
@@ -12,6 +15,10 @@
 import type { Agent } from '#/agent';
 import { z } from 'zod';
 
+import {
+  formatCompletionReviewFailure,
+  reviewGoalCompletion,
+} from '../../../agent/goal/completion-review';
 import {
   buildGoalBlockedReasonPrompt,
   buildGoalCompletionSummaryPrompt,
@@ -54,7 +61,12 @@ export class UpdateGoalTool implements BuiltinTool<UpdateGoalToolInput> {
     const goalIsActive = currentGoal?.status === 'active';
 
     return {
-      description: `Setting goal status: ${status}`,
+      // Header while the tool is in flight — for `complete`, make clear we are
+      // only *requesting* completion until the independent review finishes.
+      description:
+        status === 'complete'
+          ? 'Requesting goal completion (awaiting evidence review)'
+          : `Setting goal status: ${status}`,
       stopBatchAfterThis: status !== 'active' && goalIsActive,
       approvalRule: this.name,
       execute: async () => {
@@ -66,12 +78,63 @@ export class UpdateGoalTool implements BuiltinTool<UpdateGoalToolInput> {
           return { output: 'Goal resumed.' };
         }
         if (status === 'complete') {
+          const active = goal.getGoal().goal;
+          if (active === null || active.status !== 'active') {
+            return { output: 'Goal not completed: no active goal.' };
+          }
+          const subagentHost = this.agent.subagentHost;
+          if (subagentHost === undefined) {
+            return {
+              isError: true,
+              output:
+                'Goal not completed: completion review requires subagent support in this session. The goal remains active.',
+            };
+          }
+
+          const reviewingNotice =
+            'Requesting completion — running independent read-only evidence review…';
+
+          let review;
+          try {
+            review = await reviewGoalCompletion({
+              subagentHost,
+              goal: active,
+              parentToolCallId: 'update-goal-complete',
+            });
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            const timedOut = /timeout|timed out|aborted/i.test(detail);
+            return {
+              isError: true,
+              output: [
+                reviewingNotice,
+                '',
+                timedOut
+                  ? 'Goal not completed: evidence review timed out or was aborted.'
+                  : `Goal not completed: evidence review failed (${detail}).`,
+                'The goal remains active. Keep working, then retry UpdateGoal with `complete` when proof is ready.',
+              ].join('\n'),
+            };
+          }
+
+          if (!review.passed) {
+            return {
+              output: `${reviewingNotice}\n\n${formatCompletionReviewFailure(review)}`,
+              // Do not stop the turn/goal — leave goal active so the driver continues.
+            };
+          }
+
           const completed = await goal.markComplete({}, 'model');
           if (completed === null) {
             return { output: 'Goal not completed: no active goal.' };
           }
-          const output =
-            buildGoalCompletionSummaryPrompt(completed);
+          const output = [
+            'Completion review passed.',
+            '',
+            buildGoalCompletionSummaryPrompt(completed),
+            '',
+            `Independent review evidence: ${review.evidence}`,
+          ].join('\n');
           return { output, stopTurn: true };
         }
         if (status === 'blocked') {
