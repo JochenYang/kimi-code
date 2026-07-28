@@ -52,7 +52,8 @@ type BaseQueuedSubagentTask<T> = {
   readonly runInBackground: boolean;
   readonly timeout?: number;
   readonly signal?: AbortSignal;
-  readonly modelChoice?: SubagentModelChoice;
+		readonly modelChoice?: SubagentModelChoice;
+  readonly skipSummaryContinuation?: boolean;
 };
 
 export type SpawnQueuedSubagentTask<T = unknown> = BaseQueuedSubagentTask<T> & {
@@ -313,6 +314,7 @@ export class SubagentBatch<T> {
         this.markAttemptReady(attempt);
       },
       suppressRateLimitFailureEvent: true,
+      skipSummaryContinuation: task.skipSummaryContinuation,
     };
 
     let handle: SubagentHandle;

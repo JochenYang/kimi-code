@@ -610,6 +610,23 @@ export abstract class SDKRpcClientBase {
     });
   }
 
+  async startDeepResearch(
+    input: SessionIdRpcInput & {
+      readonly query: string;
+      readonly breadth?: number;
+      readonly onProgress?: (progress: { readonly phase: string; readonly detail: string }) => void;
+    },
+  ) {
+    const rpc = await this.getRpc();
+    return rpc.startDeepResearch({
+      sessionId: input.sessionId,
+      agentId: this.interactiveAgentId,
+      query: input.query,
+      breadth: input.breadth,
+      onProgress: input.onProgress,
+    });
+  }
+
   async cancel(input: SessionIdRpcInput): Promise<void> {
     const agentId = this.interactiveAgentId;
     const rpc = await this.getRpc();

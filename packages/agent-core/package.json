@@ -34,6 +34,7 @@
     "#/agent/context": "./src/agent/context/index.ts",
     "#/agent/cron": "./src/agent/cron/index.ts",
     "#/agent/goal": "./src/agent/goal/index.ts",
+    "#/agent/deep-research": "./src/agent/deep-research/index.ts",
     "#/agent/permission": "./src/agent/permission/index.ts",
     "#/agent/plan": "./src/agent/plan/index.ts",
     "#/agent/swarm": "./src/agent/swarm/index.ts",

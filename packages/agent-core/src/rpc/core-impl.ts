@@ -106,6 +106,8 @@ import type {
   CoreInfo,
   CreateGoalPayload,
   CreateSessionPayload,
+  DeepResearchPayload,
+  DeepResearchResult,
   DeleteSessionPayload,
   DetachBackgroundPayload,
   ClientTelemetryInfo,
@@ -1725,6 +1727,13 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
 
   startBtw({ sessionId, ...payload }: SessionAgentPayload<EmptyPayload>): Promise<string> {
     return this.sessionApi(sessionId).startBtw(payload);
+  }
+
+  startDeepResearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<DeepResearchPayload>): Promise<DeepResearchResult> {
+    return this.sessionApi(sessionId).startDeepResearch(payload);
   }
 
   createGoal({

@@ -121,6 +121,12 @@ export interface RunSubagentOptions {
   readonly signal: AbortSignal;
   readonly onReady?: () => void;
   readonly suppressRateLimitFailureEvent?: boolean;
+  /**
+   * When true, skip the short-summary expansion follow-up. Used by structured
+   * pipelines (deep research) that need the raw final assistant text (often a
+   * compact JSON object) rather than a prose handoff for a parent agent.
+   */
+  readonly skipSummaryContinuation?: boolean;
 }
 
 export interface SpawnSubagentOptions extends RunSubagentOptions {
@@ -414,15 +420,18 @@ export class SessionSubagentHost {
     // A subagent that returns an overly terse summary leaves the parent
     // agent under-informed. Give it a bounded number of chances to expand
     // the handoff; if it is still short after that, accept it as-is rather
-    // than retrying indefinitely.
+    // than retrying indefinitely. Structured callers (deep research) opt out:
+    // their final message is often a short JSON object and must not be rewritten.
     let result = lastAssistantText(child);
-    let remainingContinuations = SUMMARY_CONTINUATION_ATTEMPTS;
-    while (remainingContinuations > 0 && result.length < SUMMARY_MIN_LENGTH) {
-      remainingContinuations -= 1;
-      options.signal.throwIfAborted();
-      child.turn.prompt([{ type: 'text', text: SUMMARY_CONTINUATION_PROMPT }], SUBAGENT_PROMPT_ORIGIN);
-      await runChildTurnToCompletion(child, options.signal);
-      result = lastAssistantText(child);
+    if (options.skipSummaryContinuation !== true) {
+      let remainingContinuations = SUMMARY_CONTINUATION_ATTEMPTS;
+      while (remainingContinuations > 0 && result.length < SUMMARY_MIN_LENGTH) {
+        remainingContinuations -= 1;
+        options.signal.throwIfAborted();
+        child.turn.prompt([{ type: 'text', text: SUMMARY_CONTINUATION_PROMPT }], SUBAGENT_PROMPT_ORIGIN);
+        await runChildTurnToCompletion(child, options.signal);
+        result = lastAssistantText(child);
+      }
     }
     const usage = child.usage.data().total;
     parent.emitEvent({

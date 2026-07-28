@@ -25,6 +25,7 @@ import type { McpRegistryPluginOrigin, McpServerSource } from '#/mcp/registry';
 import type { ContentPart } from '@moonshot-ai/kosong';
 import type { SessionWarning } from '@moonshot-ai/protocol';
 
+import type { DeepResearchResult } from '#/agent/deep-research';
 import type { PluginCommandDef, PluginInfo, PluginSummary, ReloadSummary } from '#/plugin';
 import type { UsageStatus } from './events';
 import type { WithAgentId, WithSessionId } from './types';
@@ -578,9 +579,25 @@ export type {
   GoalToolResult,
 };
 
+export type { DeepResearchResult };
+
 export interface CreateGoalPayload {
   readonly objective: string;
   readonly replace?: boolean;
+}
+
+export interface DeepResearchPayload {
+  readonly query: string;
+  readonly breadth?: number;
+  /**
+   * Optional progress callback for interactive hosts (TUI). Not serialized over
+   * the wire — only honored for in-process / same-runtime callers that can pass
+   * a function through the RPC client.
+   */
+  readonly onProgress?: (progress: {
+    readonly phase: string;
+    readonly detail: string;
+  }) => void;
 }
 
 export interface GetKimiConfigPayload {
@@ -632,6 +649,7 @@ export interface AgentAPI {
   activatePluginCommand: (payload: ActivatePluginCommandPayload) => void;
   startBtw: (payload: EmptyPayload) => string;
   createGoal: (payload: CreateGoalPayload) => GoalSnapshot;
+  startDeepResearch: (payload: DeepResearchPayload) => Promise<DeepResearchResult>;
   getGoal: (payload: EmptyPayload) => GoalToolResult;
   pauseGoal: (payload: EmptyPayload) => GoalSnapshot;
   resumeGoal: (payload: EmptyPayload) => GoalSnapshot;

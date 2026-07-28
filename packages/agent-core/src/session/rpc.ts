@@ -12,6 +12,7 @@ import type {
   CancelPlanPayload,
   CancelShellCommandPayload,
   CreateGoalPayload,
+  DeepResearchPayload,
   DetachBackgroundPayload,
   EmptyPayload,
   EnterSwarmPayload,
@@ -260,6 +261,10 @@ export class SessionAPIImpl implements PromisableMethods<SessionAPI> {
 
   async startBtw({ agentId, ...payload }: AgentScopedPayload<EmptyPayload>): Promise<string> {
     return (await this.getAgent(agentId)).startBtw(payload);
+  }
+
+  async startDeepResearch({ agentId, ...payload }: AgentScopedPayload<DeepResearchPayload>) {
+    return (await this.getAgent(agentId)).startDeepResearch(payload);
   }
 
   async createGoal({ agentId, ...payload }: AgentScopedPayload<CreateGoalPayload>) {

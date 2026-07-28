@@ -35,8 +35,14 @@ import {
 import { CronManager } from './cron';
 import { ConfigState } from './config';
 import { ContextMemory } from './context';
+import {
+  DeepResearchOrchestrator,
+  createDeepResearchHost,
+  DEEP_RESEARCH_MAX_QUERY_LENGTH,
+} from './deep-research';
 import { GoalMode } from './goal';
 import { HookEngine } from '../session/hooks';
+
 import { InjectionManager } from './injection/manager';
 import { PermissionManager, type PermissionManagerOptions } from './permission';
 import { PlanMode } from './plan';
@@ -72,6 +78,12 @@ export type {
   UserToolRegistration,
 } from './tool';
 export * from './goal';
+export type {
+  DeepResearchInput,
+  DeepResearchResult,
+  DeepResearchStatus,
+  DeepResearchProgress,
+} from './deep-research';
 
 export type AgentType = 'main' | 'sub' | 'independent';
 
@@ -163,6 +175,8 @@ export class Agent {
   readonly cron: CronManager | null;
   readonly goal: GoalMode;
   readonly replayBuilder: ReplayBuilder;
+  /** AbortController for an in-flight `/deep-research` run (no main turn). */
+  private deepResearchAbort: AbortController | undefined;
 
   /**
    * Print-mode (`kimi -p`) only: when true and the agent ends a turn while
@@ -565,6 +579,7 @@ export class Agent {
             trace_id: this.turn.activeRequestTraceId(),
           });
         }
+        this.deepResearchAbort?.abort();
         this.turn.cancel(payload.turnId);
       },
       undoHistory: (payload) => {
@@ -704,6 +719,92 @@ export class Agent {
       },
       startBtw: () => this.subagentHost!.startBtw(),
       createGoal: (payload) => this.goal.createGoal(payload),
+      startDeepResearch: async (payload) => {
+        if (this.subagentHost === undefined) {
+          throw new KimiError(
+            ErrorCodes.REQUEST_INVALID,
+            'Deep research requires a session with subagent support',
+          );
+        }
+        if (this.homedir === undefined || this.homedir.length === 0) {
+          throw new KimiError(
+            ErrorCodes.REQUEST_INVALID,
+            'Deep research requires a session directory for the report scratch file',
+          );
+        }
+        const query = payload.query.trim();
+        if (query.length === 0) {
+          throw new KimiError(ErrorCodes.REQUEST_INVALID, 'Deep research query cannot be empty');
+        }
+        if (query.length > DEEP_RESEARCH_MAX_QUERY_LENGTH) {
+          throw new KimiError(
+            ErrorCodes.REQUEST_INVALID,
+            `Deep research query is too long (max ${DEEP_RESEARCH_MAX_QUERY_LENGTH} characters)`,
+          );
+        }
+        if (this.turn.hasActiveTurn) {
+          throw new KimiError(
+            ErrorCodes.TURN_AGENT_BUSY,
+            'Cannot start deep research while another turn is active',
+          );
+        }
+
+        // Own abort controller so Esc/cancel can stop research even though no
+        // main turn is running. Linked to the agent's cancel path via turn.abort.
+        const controller = new AbortController();
+        const previousDeepResearch = this.deepResearchAbort;
+        previousDeepResearch?.abort();
+        this.deepResearchAbort = controller;
+
+        const runScopeId = `deep-research-${randomUUID().slice(0, 8)}`;
+        // Progress must survive the in-process RPC JSON clone (functions are
+        // stripped). Always emit a warning event the TUI already renders; also
+        // invoke onProgress when the caller could pass a live function.
+        const reportProgress = (progress: { phase: string; detail: string }): void => {
+          this.emitEvent({
+            type: 'warning',
+            code: 'deep-research-progress',
+            message: `Deep research · ${progress.phase}: ${progress.detail}`,
+          });
+          try {
+            payload.onProgress?.({
+              phase: progress.phase,
+              detail: progress.detail,
+            });
+          } catch {
+            // Host UI callback must not abort the pipeline.
+          }
+        };
+        const host = createDeepResearchHost(
+          this.subagentHost,
+          this.homedir,
+          runScopeId,
+          reportProgress,
+        );
+        const orchestrator = new DeepResearchOrchestrator(
+          { query, breadth: payload.breadth },
+          host,
+        );
+        try {
+          reportProgress({ phase: 'Plan', detail: 'Decompose query into independent questions' });
+          const result = await orchestrator.run(controller.signal);
+          reportProgress({
+            phase: 'Done',
+            detail: `status=${result.status}; report=${result.reportPath ?? '(in-memory)'}`,
+          });
+          return result;
+        } catch (error) {
+          reportProgress({
+            phase: 'Failed',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        } finally {
+          if (this.deepResearchAbort === controller) {
+            this.deepResearchAbort = undefined;
+          }
+        }
+      },
       getGoal: () => this.goal.getGoal(),
       pauseGoal: () => this.goal.pauseGoal(),
       resumeGoal: () => this.goal.resumeGoal(),

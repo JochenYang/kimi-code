@@ -240,6 +240,22 @@ export class Session {
     return this.rpc.startBtw({ sessionId: this.id });
   }
 
+  async startDeepResearch(
+    query: string,
+    options?: {
+      readonly breadth?: number;
+      readonly onProgress?: (progress: { readonly phase: string; readonly detail: string }) => void;
+    },
+  ) {
+    this.ensureOpen();
+    return this.rpc.startDeepResearch({
+      sessionId: this.id,
+      query,
+      breadth: options?.breadth,
+      onProgress: options?.onProgress,
+    });
+  }
+
   async cancel(): Promise<void> {
     this.ensureOpen();
     await this.rpc.cancel({ sessionId: this.id });
