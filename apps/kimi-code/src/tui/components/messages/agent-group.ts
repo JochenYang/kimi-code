@@ -155,7 +155,9 @@ export class AgentGroupComponent extends Container {
     const bullet = allDone
       ? currentTheme.fg('success', STATUS_BULLET)
       : currentTheme.fg('text', STATUS_BULLET);
-    const elapsedSeconds = maxElapsedSeconds(snapshots);
+    // Group wall-clock from snapshot anchors (earliest start → latest end / now).
+    // max(per-agent elapsed) under-counts sequential spawns in one group.
+    const elapsedSeconds = groupWallClockSeconds(snapshots);
 
     if (allDone) {
       const types = new Set(snapshots.map((s) => s.agentName).filter((n) => n !== undefined));
@@ -357,14 +359,39 @@ function formatHeaderTail(args: {
   return parts.length > 0 ? currentTheme.dim(` · ${parts.join(' · ')}`) : '';
 }
 
-function maxElapsedSeconds(snapshots: readonly ToolCallSubagentSnapshot[]): number | undefined {
-  let max: number | undefined;
+/**
+ * Wall-clock for the whole group from snapshot anchors only:
+ * min(startedAtMs) → max(endedAtMs) when every started member has ended,
+ * else → now. Unstarted members do not move the start anchor; they keep the
+ * group active so end stays "now".
+ */
+function groupWallClockSeconds(
+  snapshots: readonly ToolCallSubagentSnapshot[],
+): number | undefined {
+  let startMs: number | undefined;
+  let endMs: number | undefined;
+  let allStartedEnded = true;
+  let anyStarted = false;
+
   for (const snap of snapshots) {
-    const elapsed = snap.elapsedSeconds;
-    if (elapsed === undefined) continue;
-    max = max === undefined ? elapsed : Math.max(max, elapsed);
+    const startedAtMs = snap.startedAtMs;
+    if (startedAtMs === undefined) {
+      allStartedEnded = false;
+      continue;
+    }
+    anyStarted = true;
+    startMs = startMs === undefined ? startedAtMs : Math.min(startMs, startedAtMs);
+    const endedAtMs = snap.endedAtMs;
+    if (endedAtMs === undefined) {
+      allStartedEnded = false;
+      continue;
+    }
+    endMs = endMs === undefined ? endedAtMs : Math.max(endMs, endedAtMs);
   }
-  return max;
+
+  if (!anyStarted || startMs === undefined) return undefined;
+  const end = allStartedEnded && endMs !== undefined ? endMs : Date.now();
+  return Math.max(0, Math.floor((end - startMs) / 1000));
 }
 
 function formatElapsed(seconds: number): string {
