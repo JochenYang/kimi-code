@@ -219,6 +219,43 @@ describe('AgentGroupComponent', () => {
     running.dispose();
   });
 
+  it('uses group wall-clock for sequential agents, not max per-agent lifetime', () => {
+    // Deep-research style: agent A runs 0→5s, agent B runs 5→15s. Header must
+    // show 15s (earliest start → latest end), not max(5, 10)=10s.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const ui = stubTui();
+    const group = new AgentGroupComponent(ui);
+    const first = createAgent('call_agent_1', 'plan questions', 'explore', ui);
+    startAgent(first, 'call_agent_1', 'explore');
+    group.attach('call_agent_1', first);
+
+    vi.setSystemTime(5_000);
+    first.onSubagentCompleted({ resultSummary: 'planned' });
+
+    const second = createAgent('call_agent_2', 'research claims', 'explore', ui);
+    startAgent(second, 'call_agent_2', 'explore');
+    group.attach('call_agent_2', second);
+
+    vi.setSystemTime(15_000);
+    // Header text is only rebuilt on child snapshot / attach; clock jumps alone
+    // do not repaint. Invalidate forces the same path the live elapsed timer uses.
+    group.invalidate();
+    const mid = renderText(group);
+    expect(mid).toContain('Running 2 agents (1 done, 1 running) · 15s');
+    // Per-row still shows each agent's own lifetime.
+    expect(mid).toContain('explore · plan questions · 0 tools · 5s · ✓ Completed');
+    expect(mid).toContain('explore · research claims · 0 tools · 10s · Running');
+
+    second.onSubagentCompleted({ resultSummary: 'researched' });
+    const done = renderText(group);
+    expect(done).toContain('2 explore agents finished · 15s');
+
+    group.dispose();
+    first.dispose();
+    second.dispose();
+  });
+
   it('renders a detached foreground subagent as backgrounded in the group, even after its ToolResult lands', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
