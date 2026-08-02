@@ -102,10 +102,12 @@ export function formatDeepResearchTranscript(result: DeepResearchResult): string
   }
 
   // Attach the Sources lookup so [S1]-style markers in the body are readable
-  // in place instead of dangling until the user opens the report file.
+  // in place instead of dangling until the user opens the report file. The
+  // report file keeps full titles/URLs; the bubble compresses each entry to a
+  // single line so long search-snapshot URLs do not flood the transcript.
   const sources = extractSourcesSection(result.report);
   if (sources !== null) {
-    lines.push(`## Sources\n${sources}`);
+    lines.push(`## Sources\n${compressSourcesSection(sources)}`);
     lines.push('');
   }
 
@@ -130,6 +132,70 @@ function extractSourcesSection(report: string): string | null {
   const end = nextHeading === -1 ? report.length : nextHeading;
   const section = report.slice(firstLineEnd + 1, end).trim();
   return section.length > 0 ? section : null;
+}
+
+/** Hard caps so one bloated entry cannot flood the transcript bubble. */
+const SOURCES_TITLE_MAX = 60;
+const SOURCES_LOCATOR_MAX = 100;
+
+/**
+ * Compress the report's multi-line Sources section into one readable line per
+ * entry: `- [S1] title — locator`, titles/URLs truncated, verifier cross-check
+ * text dropped (it stays in the full report file). Tolerates the legacy
+ * single-line `title — locator` form as well.
+ */
+function compressSourcesSection(section: string): string {
+  const entries = new Map<number, { ids: string; title: string; locator: string }>();
+  let current: { ids: string; title: string; locator: string } | undefined;
+
+  for (const rawLine of section.split('\n')) {
+    const line = rawLine.trim();
+    const entryMatch = line.match(/^- ((\[S\d+\](?: \[S\d+\])*)) (.*)$/);
+    if (entryMatch !== null) {
+      const index = Number(line.match(/\[S(\d+)\]/)?.[1]);
+      current = { ids: entryMatch[1]!, title: entryMatch[3]!, locator: '' };
+      if (index !== undefined && Number.isFinite(index)) {
+        entries.set(index, current);
+      }
+      continue;
+    }
+    if (current !== undefined && line.length > 0) {
+      if (current.locator === '') {
+        current.locator = line.startsWith('independently checked against:')
+          ? current.locator
+          : line;
+      }
+      // Any further continuation lines (verifier cross-check) are ignored.
+    }
+  }
+
+  const lines: string[] = [];
+  for (const index of [...entries.keys()].sort((a, b) => a - b)) {
+    const entry = entries.get(index)!;
+    let title = entry.title;
+    let locator = entry.locator;
+    if (locator === '') {
+      // Legacy single-line form: `title — locator (independently checked …)`.
+      const cut = title.indexOf(' (independently checked');
+      if (cut !== -1) title = title.slice(0, cut);
+      const separator = title.lastIndexOf(' — ');
+      if (separator !== -1) {
+        locator = title.slice(separator + 3).trim();
+        title = title.slice(0, separator).trim();
+      }
+    }
+    lines.push(`- ${entry.ids} ${truncateMiddle(title, SOURCES_TITLE_MAX)} — ${truncateMiddle(locator, SOURCES_LOCATOR_MAX)}`);
+  }
+  return lines.join('\n');
+}
+
+function truncateMiddle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 1) return '…';
+  const keep = Math.max(1, max - 1);
+  const head = Math.ceil(keep * 0.6);
+  const tail = keep - head;
+  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
 }
 
 /** Short footer status after the transcript reply is posted. */
