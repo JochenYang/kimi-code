@@ -350,7 +350,6 @@ export class DeepResearchOrchestrator {
     const fallbackBody = '## Findings\n' + verified.map((f, i) => `- ${f.claim} [S${i + 1}]`).join('\n');
 
     let body = fallbackBody;
-    let synthesized = false;
 
     // Try LLM synthesis. Abort must rethrow so the outer catch can mark cancelled;
     // only non-abort synthesis failures fall back to the deterministic list.
@@ -372,7 +371,6 @@ export class DeepResearchOrchestrator {
           const valid = validateCitations(draft, verified.length);
           if (valid) {
             body = draft;
-            synthesized = true;
           } else {
             this.coverageNotes.push('The synthesized report body failed citation validation; the deterministic finding list is shown instead.');
           }
@@ -393,8 +391,6 @@ export class DeepResearchOrchestrator {
       body,
       verifiedClaims: verified,
       coverageNotes: this.coverageNotes,
-      synthesized,
-      partial: this.partial,
     });
 
     // Write to scratch
