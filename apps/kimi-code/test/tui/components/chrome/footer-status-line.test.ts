@@ -41,6 +41,7 @@ const baseState: AppState = {
   availableModels: {},
   availableProviders: {},
   mcpServersSummary: null,
+  lastTokenSpeed: null,
 };
 
 const payload: StatusLinePayload = {
