@@ -10,8 +10,6 @@ export interface ReportInput {
   readonly body: string;
   readonly verifiedClaims: readonly VerifiedClaim[];
   readonly coverageNotes: readonly string[];
-  readonly synthesized: boolean;
-  readonly partial: boolean;
 }
 
 /**
