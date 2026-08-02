@@ -13,8 +13,11 @@ function makeResult(overrides: Partial<DeepResearchResult> = {}): DeepResearchRe
     status: 'verified',
     report:
       '# Research result\n\n**Status: Verified**\n\nBody.\n\n## Sources\n'
-      + '- [S1] Example Source — https://example.com/a\n'
-      + '- [S2] Verifier Source — https://example.com/b (independently checked against https://example.com/b)\n\n'
+      + '- [S1] Example Source\n'
+      + '  https://example.com/a\n'
+      + '- [S2] Verifier Source\n'
+      + '  https://example.com/b\n'
+      + '  independently checked against: Other Source — https://example.com/c\n\n'
       + '## Coverage and uncertainty\n- none',
     chatReport: 'Chat body with [S1].',
     reportPath: '/tmp/report.md',
@@ -163,11 +166,43 @@ describe('formatDeepResearchTranscript / footer', () => {
     expect(text).toContain('**Full report:** `/tmp/report.md`');
   });
 
-  it('attaches the Sources lookup section so [Sn] markers are readable in place', () => {
+  it('attaches a compressed Sources lookup so [Sn] markers are readable in place', () => {
     const text = formatDeepResearchTranscript(makeResult());
     expect(text).toContain('## Sources');
     expect(text).toContain('- [S1] Example Source — https://example.com/a');
     expect(text).toContain('- [S2] Verifier Source — https://example.com/b');
+    // Verifier cross-check detail stays in the full report file only.
+    expect(text).not.toContain('independently checked against');
+  });
+
+  it('truncates long source titles and locators in the bubble', () => {
+    const longTitle = 'A'.repeat(200);
+    const longUrl = 'https://example.com/' + 'b'.repeat(300);
+    const text = formatDeepResearchTranscript(
+      makeResult({
+        report:
+          '# Research result\n\n**Status: Verified**\n\nBody.\n\n## Sources\n'
+          + `- [S1] ${longTitle}\n`
+          + `  ${longUrl}\n\n`
+          + '## Coverage and uncertainty\n- none',
+      }),
+    );
+    expect(text).toContain('…');
+    expect(text).not.toContain(longTitle);
+    expect(text).not.toContain(longUrl);
+  });
+
+  it('still compresses the legacy single-line sources form', () => {
+    const text = formatDeepResearchTranscript(
+      makeResult({
+        report:
+          '# Research result\n\n**Status: Verified**\n\nBody.\n\n## Sources\n'
+          + '- [S1] Example Source — https://example.com/a (independently checked against Other — https://example.com/b)\n\n'
+          + '## Coverage and uncertainty\n- none',
+      }),
+    );
+    expect(text).toContain('- [S1] Example Source — https://example.com/a');
+    expect(text).not.toContain('independently checked against');
   });
 
   it('omits the Sources section when the report has none', () => {
