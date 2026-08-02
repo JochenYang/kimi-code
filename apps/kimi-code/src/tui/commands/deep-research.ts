@@ -101,6 +101,14 @@ export function formatDeepResearchTranscript(result: DeepResearchResult): string
     lines.push('');
   }
 
+  // Attach the Sources lookup so [S1]-style markers in the body are readable
+  // in place instead of dangling until the user opens the report file.
+  const sources = extractSourcesSection(result.report);
+  if (sources !== null) {
+    lines.push(`## Sources\n${sources}`);
+    lines.push('');
+  }
+
   if (result.reportPath !== null) {
     lines.push(`**Full report:** \`${result.reportPath}\``);
   }
@@ -111,6 +119,19 @@ export function formatDeepResearchTranscript(result: DeepResearchResult): string
   return lines.join('\n');
 }
 
+/** Extract the "## Sources" list section from the full report markdown. */
+function extractSourcesSection(report: string): string | null {
+  const marker = '## Sources';
+  const start = report.indexOf(marker);
+  if (start === -1) return null;
+  const firstLineEnd = report.indexOf('\n', start);
+  if (firstLineEnd === -1) return null;
+  const nextHeading = report.indexOf('\n## ', firstLineEnd + 1);
+  const end = nextHeading === -1 ? report.length : nextHeading;
+  const section = report.slice(firstLineEnd + 1, end).trim();
+  return section.length > 0 ? section : null;
+}
+
 /** Short footer status after the transcript reply is posted. */
 export function formatDeepResearchFooter(result: DeepResearchResult): string {
   const statusLabel = result.status.charAt(0).toUpperCase() + result.status.slice(1);
@@ -118,9 +139,4 @@ export function formatDeepResearchFooter(result: DeepResearchResult): string {
     return `Deep research · ${statusLabel} · full report saved`;
   }
   return `Deep research · ${statusLabel}`;
-}
-
-/** @deprecated kept for tests that import the old name */
-export function formatDeepResearchStatus(result: DeepResearchResult): string {
-  return formatDeepResearchFooter(result);
 }
