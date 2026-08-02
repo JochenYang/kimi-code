@@ -11,7 +11,11 @@ import type { DeepResearchResult } from '@moonshot-ai/kimi-code-sdk';
 function makeResult(overrides: Partial<DeepResearchResult> = {}): DeepResearchResult {
   return {
     status: 'verified',
-    report: '# Full\n\nbody',
+    report:
+      '# Research result\n\n**Status: Verified**\n\nBody.\n\n## Sources\n'
+      + '- [S1] Example Source — https://example.com/a\n'
+      + '- [S2] Verifier Source — https://example.com/b (independently checked against https://example.com/b)\n\n'
+      + '## Coverage and uncertainty\n- none',
     chatReport: 'Chat body with [S1].',
     reportPath: '/tmp/report.md',
     verifiedClaimIds: ['c1'],
@@ -157,6 +161,22 @@ describe('formatDeepResearchTranscript / footer', () => {
     expect(text).toContain('# Deep research · Verified');
     expect(text).toContain('Chat body with [S1].');
     expect(text).toContain('**Full report:** `/tmp/report.md`');
+  });
+
+  it('attaches the Sources lookup section so [Sn] markers are readable in place', () => {
+    const text = formatDeepResearchTranscript(makeResult());
+    expect(text).toContain('## Sources');
+    expect(text).toContain('- [S1] Example Source — https://example.com/a');
+    expect(text).toContain('- [S2] Verifier Source — https://example.com/b');
+  });
+
+  it('omits the Sources section when the report has none', () => {
+    const text = formatDeepResearchTranscript(
+      makeResult({
+        report: '# Research result\n\n**Status: Partial**\n\nNo claims.\n\n## Coverage and uncertainty\n- gap',
+      }),
+    );
+    expect(text).not.toContain('## Sources');
   });
 
   it('formats a short footer status', () => {
