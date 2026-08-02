@@ -37,11 +37,14 @@ export function buildFullReport(input: ReportInput): string {
 
   for (const row of deduplicated) {
     const ids = row.citations.map((c) => `[${c}]`).join(' ');
-    report += `- ${ids} ${row.title} — ${row.locator}`;
+    // Multi-line layout: titles and locators are often long (search-snapshot
+    // URLs, multi-source titles), so one entry per line is unreadable. Keep
+    // the full text — this file is the citation archive — but split the fields.
+    report += `- ${ids} ${row.title}\n`;
+    report += `  ${row.locator}\n`;
     if (row.v_locator !== row.locator || row.v_title !== row.title) {
-      report += ` (independently checked against ${row.v_title} — ${row.v_locator})`;
+      report += `  independently checked against: ${row.v_title} — ${row.v_locator}\n`;
     }
-    report += '\n';
   }
 
   // ── Coverage and uncertainty ─────────────────────────────────────────
