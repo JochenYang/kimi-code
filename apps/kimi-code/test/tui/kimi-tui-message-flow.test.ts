@@ -3736,6 +3736,74 @@ command = "vim"
     }
   });
 
+  it('appends a subtle runtime tag after a completed turn reports its duration', async () => {
+    const { driver } = await makeDriver();
+    driver.state.appState.streamingPhase = 'waiting';
+
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'turn.ended',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        turnId: 1,
+        reason: 'completed',
+        durationMs: 83_400,
+      } as Event,
+      () => {},
+    );
+
+    expect(stripSgr(renderTranscript(driver))).toContain('Done in 1m 23s');
+  });
+
+  it('carries seconds over 60 into the minute part of the runtime tag', async () => {
+    const { driver } = await makeDriver();
+    driver.state.appState.streamingPhase = 'waiting';
+
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'turn.ended',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        turnId: 1,
+        reason: 'completed',
+        durationMs: 119_700,
+      } as Event,
+      () => {},
+    );
+
+    expect(stripSgr(renderTranscript(driver))).toContain('Done in 2m 0s');
+    expect(stripSgr(renderTranscript(driver))).not.toContain('1m 60s');
+  });
+
+  it('skips the runtime tag for cancelled turns and missing durations', async () => {
+    const { driver } = await makeDriver();
+    driver.state.appState.streamingPhase = 'waiting';
+
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'turn.ended',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        turnId: 1,
+        reason: 'cancelled',
+        durationMs: 5_000,
+      } as Event,
+      () => {},
+    );
+    driver.sessionEventHandler.handleEvent(
+      {
+        type: 'turn.ended',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        turnId: 2,
+        reason: 'completed',
+      } as Event,
+      () => {},
+    );
+
+    expect(stripSgr(renderTranscript(driver))).not.toContain('Done in');
+  });
+
   it('queues bash input with mode bash while a turn is streaming', async () => {
     const { driver, session } = await makeDriver();
     driver.state.appState.streamingPhase = 'waiting';

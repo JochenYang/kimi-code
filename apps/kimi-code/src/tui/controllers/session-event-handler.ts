@@ -387,7 +387,8 @@ export class SessionEventHandler {
     }
     this.host.streamingUI.resetToolUi();
     this.host.streamingUI.finalizeTurn(sendQueued);
-    this.host.recordSessionActivity();
+this.host.recordSessionActivity();
+    this.appendTurnDurationTag(event);
     this.renderPendingModelBlockedFallback();
     this.currentTurnHasAssistantText = false;
     this.goalCompletionTurnEnded = true;
@@ -408,6 +409,22 @@ export class SessionEventHandler {
     }
     this.pluginMcpToolsUsedInTurn.clear();
     this.scheduleQueuedGoalPromotion();
+  }
+
+  /**
+   * Low-profile runtime tag after a completed reply: a dim "Done in …" line
+   * right below the assistant message. Cancelled / failed / blocked turns
+   * already surface their own notices, so the tag is skipped there.
+   */
+  private appendTurnDurationTag(event: TurnEndedEvent): void {
+    if (event.reason !== 'completed' || event.durationMs === undefined) return;
+    this.host.appendTranscriptEntry({
+      id: nextTranscriptId(),
+      kind: 'status',
+      turnId: String(event.turnId),
+      renderMode: 'plain',
+      content: `Done in ${formatTurnDuration(event.durationMs)}`,
+    });
   }
 
   private handleStepBegin(event: TurnStepStartedEvent): void {
@@ -1274,4 +1291,18 @@ export class SessionEventHandler {
     state.footer.setBackgroundCounts({ bashTasks, agentTasks });
     state.ui.requestRender();
   }
+}
+
+/** Formats a turn's wall-clock duration: `834ms` / `16.0s` / `1m 23s`. */
+function formatTurnDuration(ms: number): string {
+  if (ms < 1000) return `${Math.max(1, Math.round(ms))}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  let minutes = Math.floor(ms / 60_000);
+  let seconds = Math.round((ms % 60_000) / 1000);
+  // Rounding the seconds up to 60 must carry into the minutes (e.g. 119.9s).
+  if (seconds === 60) {
+    minutes += 1;
+    seconds = 0;
+  }
+  return `${minutes}m ${seconds}s`;
 }
