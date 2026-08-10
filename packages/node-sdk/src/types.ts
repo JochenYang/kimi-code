@@ -29,6 +29,7 @@ export interface AgentRuntimeBinding {
 }
 
 export type { CapabilityStatus } from '@moonshot-ai/agent-core-v2/app/capability/types';
+export type { DeepResearchResult } from '@moonshot-ai/agent-core-v2';
 
 export type {
   AgentReplayRecord,
