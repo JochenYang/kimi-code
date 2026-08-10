@@ -32,6 +32,7 @@ import type {
   ExportSessionInput,
   ExportSessionResult,
   CreateGoalInput,
+  DeepResearchResult,
   FileMeta,
   ForkSessionInput,
   GenerateSessionTitleInput,
@@ -349,6 +350,19 @@ export abstract class SDKRpcClientBase {
   abstract startBtw(input: SessionIdRpcInput): Promise<string>;
 
   abstract cancel(input: SessionIdRpcInput): Promise<void>;
+
+  async startDeepResearch(
+    input: SessionIdRpcInput & {
+      readonly query: string;
+      readonly breadth?: number;
+      readonly onProgress?: (progress: { readonly phase: string; readonly detail: string }) => void;
+    },
+  ): Promise<DeepResearchResult> {
+    void input;
+    throw new Error(
+      'startDeepResearch requires the v2 engine (agent-core-v2); the v1 engine no longer supports it',
+    );
+  }
 
   abstract clearContext(input: SessionIdRpcInput): Promise<void>;
 
