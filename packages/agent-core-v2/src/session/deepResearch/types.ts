@@ -1,4 +1,8 @@
-/** Deep-research workflow types — pure data, no runtime deps. */
+/**
+ * `deepResearch` domain — workflow data types and caps (pure data, no runtime
+ * deps): the four-phase semantics, host interface, and result contract shared
+ * by the orchestrator, its host adapter, and the session service.
+ */
 
 export const DEEP_RESEARCH_DEFAULT_BREADTH = 4;
 export const DEEP_RESEARCH_MIN_BREADTH = 2;
@@ -91,8 +95,8 @@ export interface DeepResearchAgentOutcome {
 }
 
 /**
- * Host capabilities the orchestrator needs. Implemented by Agent via
- * SessionSubagentHost; tests inject fakes.
+ * Host capabilities the orchestrator needs. Implemented by the deep-research
+ * session service over `ISessionSwarmService`; tests inject fakes.
  */
 export interface DeepResearchHost {
   runAgent(call: DeepResearchAgentCall, signal: AbortSignal): Promise<DeepResearchAgentOutcome>;

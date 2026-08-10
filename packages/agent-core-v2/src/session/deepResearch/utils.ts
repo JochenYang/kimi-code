@@ -1,4 +1,4 @@
-/** Utility helpers for deep-research — no external deps. */
+/** `deepResearch` domain — utility helpers for the orchestrator (no external deps). */
 
 /**
  * JSON-encode a value for safe embedding in a prompt.

@@ -4,20 +4,20 @@
  * partial-result aggregation, and report building in isolation.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
+import { DeepResearchOrchestrator } from '#/session/deepResearch/orchestrator';
 import {
-  DeepResearchOrchestrator,
-  formatDeepResearchHandoff,
   DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS,
-} from '../../src/agent/deep-research';
+  formatDeepResearchHandoff,
+} from '#/session/deepResearch/handoff';
 import type {
   DeepResearchHost,
   DeepResearchAgentCall,
   DeepResearchAgentOutcome,
   DeepResearchProgress,
   DeepResearchResult,
-} from '../../src/agent/deep-research';
+} from '#/session/deepResearch/types';
 
 // ── Fake host ────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ function makeFakeHost(
   const progress: DeepResearchProgress[] = [];
 
   return {
-    onProgress: (p) => {
+    onProgress: (p: DeepResearchProgress) => {
       progress.push(p);
     },
 
@@ -215,7 +215,7 @@ describe('DeepResearchOrchestrator', () => {
     const result = await orchestrator.run(new AbortController().signal);
 
     expect(result.status).toBe('partial');
-    expect(result.coverageNotes.some((n) => n.includes('planner failed'))).toBe(true);
+    expect(result.coverageNotes.some((n: string) => n.includes('planner failed'))).toBe(true);
   });
 
   it('respects abort signal and returns cancelled', async () => {
