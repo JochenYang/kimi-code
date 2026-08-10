@@ -401,7 +401,7 @@ export class DeepResearchOrchestrator {
       this.coverageNotes.push('The full report could not be written to disk.');
     }
 
-    const chatReport = buildChatReport(body, this.partial);
+    const chatReport = buildChatReport(body, this.partial, verified);
 
     return {
       status,
