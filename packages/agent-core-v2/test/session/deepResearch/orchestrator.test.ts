@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DeepResearchOrchestrator } from '#/session/deepResearch/orchestrator';
+import { buildFullReport, linkCitations } from '#/session/deepResearch/report-builder';
 import {
   DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS,
   formatDeepResearchHandoff,
@@ -267,6 +268,12 @@ describe('DeepResearchOrchestrator', () => {
     expect(result.report).toContain('## Sources');
     expect(result.report).toContain('[S1]');
     expect(result.report).toContain('[S2]');
+    // Citations in the body link straight to their source URL.
+    expect(result.report).toContain('[S1](<https://example.com/default>)');
+    expect(result.report).toContain('[S2](<https://example.com/default>)');
+    // The Sources section is a clean one-entry-per-line list: no verifier
+    // process noise, no "independently checked" follow-up lines.
+    expect(result.report).not.toContain('independently checked');
   });
 
   it('produces a report with Coverage section', async () => {
@@ -324,5 +331,76 @@ describe('formatDeepResearchHandoff', () => {
     const text = formatDeepResearchHandoff(makeResult({ reportPath: null }), 'q');
     expect(text).not.toContain('Full report path:');
     expect(text).toContain('Status: verified');
+  });
+});
+
+describe('report builder', () => {
+  const claims: readonly import('#/session/deepResearch/types').VerifiedClaim[] = [
+    {
+      id: 'c1',
+      claim: 'Claim 1',
+      original_evidence: 'Evidence 1',
+      original_source_title: 'Source 1',
+      original_source_locator: 'https://example.com/a',
+      verifier_evidence: 'Verified 1',
+      verifier_source_title: 'Source 1 (verified)',
+      verifier_source_locator: 'https://example.com/a-verified',
+      verifier_note: '',
+    },
+    {
+      id: 'c2',
+      claim: 'Claim 2',
+      original_evidence: 'Evidence 2',
+      original_source_title: 'Source 2',
+      original_source_locator: 'https://example.com/b',
+      verifier_evidence: 'Verified 2',
+      verifier_source_title: 'Source 2 (verified)',
+      verifier_source_locator: 'https://example.com/b-verified',
+      verifier_note: '',
+    },
+  ];
+
+  it('turns known [Sn] markers into source links and leaves unknown ones alone', () => {
+    const linked = linkCitations(
+      'Facts from [S1] and [S2]; invented [S9] stays.',
+      new Map([
+        ['S1', 'https://example.com/a'],
+        ['S2', 'https://example.com/b'],
+      ]),
+    );
+    expect(linked).toBe(
+      'Facts from [S1](<https://example.com/a>) and [S2](<https://example.com/b>); invented [S9] stays.',
+    );
+  });
+
+  it('builds a clean Sources list without verifier follow-up noise', () => {
+    const report = buildFullReport({
+      status: 'verified',
+      body: 'Body [S1].',
+      verifiedClaims: claims,
+      coverageNotes: [],
+    });
+    expect(report).toContain('## Sources');
+    expect(report).toContain('- [S1] Source 1\n  https://example.com/a\n');
+    expect(report).toContain('- [S2] Source 2\n  https://example.com/b\n');
+    expect(report).not.toContain('independently checked');
+    expect(report).not.toContain('verifier_source');
+  });
+
+  it('groups Question N uncertainty notes under per-question headings', () => {
+    const report = buildFullReport({
+      status: 'partial',
+      body: 'Body.',
+      verifiedClaims: claims,
+      coverageNotes: [
+        'Question 1 uncertainty: gap one',
+        'Question 2 uncertainty: gap two a',
+        'Question 2 uncertainty: gap two b',
+        'The planner failed; researching the original query as one question.',
+      ],
+    });
+    expect(report).toContain('### Question 1\n- gap one\n');
+    expect(report).toContain('### Question 2\n- gap two a\n- gap two b\n');
+    expect(report).toContain('- The planner failed; researching the original query as one question.\n');
   });
 });
