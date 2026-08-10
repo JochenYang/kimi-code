@@ -1,6 +1,9 @@
 /**
- * Zod schemas for deep-research structured output parsing.
- * Each phase's agent output is validated against these schemas.
+ * `deepResearch` domain — zod schemas for structured phase output parsing.
+ *
+ * Each phase's agent output is validated against these schemas; `tryParseJson`
+ * extracts fenced or bare JSON blocks and validates them leniently so a
+ * verbose subagent reply still yields its structured payload.
  */
 
 import { z } from 'zod';

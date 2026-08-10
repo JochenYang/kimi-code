@@ -1,5 +1,6 @@
 /**
- * Build the final markdown report from verified claims and coverage notes.
+ * `deepResearch` domain — report building: the full markdown report (written
+ * to the scratch file) and the shorter chat report for inline display.
  */
 
 import { deduplicateSources } from './utils';
