@@ -3,11 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { createScopedTestHost } from '#/_base/di/test';
 import { IConfigService } from '#/app/config/config';
 import {
-  modelOverridesFromToml,
-  modelOverridesToToml,
   modelsFromToml,
   modelsToToml,
-} from '#/kosong/model/configSection';
+} from '#/app/kosongConfig/configSection';
 import { IModelService, type ModelRecord } from '#/kosong/model/model';
 import '#/kosong/model/modelService';
 
@@ -61,61 +59,6 @@ describe('models TOML transforms', () => {
   });
 });
 
-describe('modelOverrides TOML transforms', () => {
-  it('round-trips completion opt-out and sampling fields', () => {
-    const effective = modelOverridesFromToml({
-      max_completion_tokens: 0,
-      thinking_keep: 'all',
-      top_p: 0.9,
-    });
-    expect(effective).toEqual({
-      maxCompletionTokens: 0,
-      thinkingKeep: 'all',
-      topP: 0.9,
-    });
-    expect(modelOverridesToToml(effective, undefined)).toEqual({
-      max_completion_tokens: 0,
-      thinking_keep: 'all',
-      top_p: 0.9,
-    });
-    await Promise.resolve();
-    expect(ready).toBe(false);
-
-    service.loadAll({ k1: { model: 'kimi-k2', maxContextSize: 262144 } }, 'k1');
-    await service.ready;
-    expect(ready).toBe(true);
-    expect(service.getDefaultModel()).toBe('k1');
-  });
-
-  it('supports CRUD and diffs state changes into onDidChangeModels', async () => {
-    const service = createService();
-    const events: Array<{
-      added: readonly string[];
-      removed: readonly string[];
-      changed: readonly string[];
-    }> = [];
-    service.onDidChangeModels((e) =>
-      events.push({ added: e.added, removed: e.removed, changed: e.changed }),
-    );
-
-    const k1: ModelRecord = { provider: 'moonshot', model: 'kimi-k2', maxContextSize: 262144 };
-    await service.set('k1', k1);
-    expect(service.get('k1')).toEqual(k1);
-    expect(service.list()).toEqual({ k1 });
-    expect(events).toEqual([{ added: ['k1'], removed: [], changed: [] }]);
-
-    const updated: ModelRecord = { ...k1, displayName: 'K2' };
-    await service.set('k1', updated);
-    expect(events.at(-1)).toEqual({ added: [], removed: [], changed: ['k1'] });
-
-    await service.set('k1', updated);
-    expect(events).toHaveLength(2);
-
-    await service.delete('k1');
-    expect(service.get('k1')).toBeUndefined();
-    expect(events.at(-1)).toEqual({ added: [], removed: ['k1'], changed: [] });
-  });
-});
 describe('ModelService', () => {
   function createHost(): {
     host: ReturnType<typeof createScopedTestHost>;
@@ -124,6 +67,9 @@ describe('ModelService', () => {
     const config = new StubConfigService();
     const host = createScopedTestHost([[IConfigService, config]]);
     const service = host.app.accessor.get(IModelService);
+    // `ModelService` is a pure in-memory registry — the persistence bridge
+    // hydrates it via `loadAll`, which also unlocks its `ready` gate.
+    service.loadAll({}, undefined);
     return { host, service };
   }
 
@@ -135,7 +81,9 @@ describe('ModelService', () => {
         removed: readonly string[];
         changed: readonly string[];
       }> = [];
-      service.onDidChangeModels((e) => events.push(e));
+      service.onDidChangeModels((e) =>
+        events.push({ added: e.added, removed: e.removed, changed: e.changed }),
+      );
 
       const k1: ModelRecord = { provider: 'moonshot', model: 'kimi-k2', maxContextSize: 262144 };
       await service.set('k1', k1);
@@ -147,10 +95,10 @@ describe('ModelService', () => {
       await service.set('k1', updated);
       expect(events.at(-1)).toEqual({ added: [], removed: [], changed: ['k1'] });
 
-      // Rewriting with an identical record still fires the config event but
-      // diffs to no changed keys.
+      // Rewriting with an identical record is a no-op (deepEqual
+      // short-circuit inside `set`), so no event is emitted.
       await service.set('k1', updated);
-      expect(events.at(-1)).toEqual({ added: [], removed: [], changed: [] });
+      expect(events).toHaveLength(2);
 
       await service.delete('k1');
       expect(service.get('k1')).toBeUndefined();

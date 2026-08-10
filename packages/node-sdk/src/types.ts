@@ -22,6 +22,9 @@ export interface AgentRuntimeBinding {
 }
 
 export type { CapabilityStatus } from '@moonshot-ai/agent-core-v2/app/capability/types';
+// Deep research lives on the v2 engine only (session-scope service); the
+// result shape is identical to the retired v1 implementation.
+export type { DeepResearchResult } from '@moonshot-ai/agent-core-v2';
 
 export type {
   AgentReplayRecord,
@@ -36,7 +39,6 @@ export type {
   ConfigDiagnostics,
   ContextMessage,
   CronTaskSnapshot,
-  DeepResearchResult,
   ExperimentalFeatureState,
   ExperimentalFlagMap,
   ExperimentalFlagSource,

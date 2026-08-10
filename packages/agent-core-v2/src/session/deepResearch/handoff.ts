@@ -1,5 +1,5 @@
 /**
- * Main-agent context handoff after a deep-research run.
+ * `deepResearch` domain — main-agent context handoff after a deep-research run.
  *
  * The pipeline does not use a main turn, so the report is invisible to the
  * next user message unless we inject a short summary + report path. Full

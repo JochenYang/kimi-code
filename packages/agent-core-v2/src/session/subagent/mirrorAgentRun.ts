@@ -179,7 +179,7 @@ export async function mirrorAgentRun(
     });
     return result;
   } catch (error) {
-    if (!isAbortError(error) && !shouldSuppressFailure(options, error)) {
+if (isAbortError(error) || options.signal.aborted || !shouldSuppressFailure(options, error)) {
       void dispatcher?.dispatch(
         new SubagentFailed({
           subagentId: run.agentId,

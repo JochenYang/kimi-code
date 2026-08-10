@@ -123,7 +123,9 @@
  * - `exportSession` → `ISessionExportService` (app scope, the v2 port of v1's
  *   export) through {@link engineAccessor}; `listSkills` → the session
  *   scope's `ISessionSkillCatalog`; `startBtw` → the session scope's
- *   `ISessionBtwService`; `setSwarmMode` / `swarm` → the agent scope's
+ *   `ISessionBtwService`; `startDeepResearch` → the session scope's
+ *   `ISessionDeepResearchService` (research subagents spawn under the main
+ *   agent; `cancel` also aborts any in-flight run); `setSwarmMode` / `swarm` → the agent scope's
  *   `IAgentSwarmService` (the v2 port of v1's `SwarmMode`), with `swarm()`
  *   recomposed over the `setSwarmMode` + `prompt` overrides; `setTowerMode` →
  *   the agent scope's `IAgentTowerService` (v2-only — the base class throws
@@ -198,6 +200,7 @@ import {
   IProviderService,
   ISessionBtwService,
   ISessionContext,
+  ISessionDeepResearchService,
   ISessionExportService,
   ISessionIndex,
   ISessionIndexMirror,
@@ -326,6 +329,7 @@ import type {
   TelemetryClient,
   UploadFileOptions,
   WorkspaceTrustInfo,
+  DeepResearchResult,
 } from '#/types';
 import {
   diagnosticsToConfigDiagnostics,
@@ -1859,7 +1863,12 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * `ISessionInitService` (a silent no-op when no init is running).
    */
   override async cancel(input: SessionIdRpcInput): Promise<void> {
+    // A deep-research run owns its own abort controller — the main turn
+    // stays idle while it runs — so the session cancel must reach it too.
+    // Abort it first: it never waits on the main loop, and this way a
+    // failing agent cancel cannot swallow the deep-research abort.
     const session = this.requireLiveSession(input.sessionId);
+    session.accessor.get(ISessionDeepResearchService).cancel();
     session.accessor.get(ISessionInitService).cancelInit();
     const agent = await this.agentFacade(input.sessionId);
     return agent.cancel();
@@ -2130,6 +2139,30 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     const session = this.requireLiveSession(input.sessionId);
     await this.materializeMainAgent(session);
     return session.accessor.get(ISessionBtwService).start();
+  }
+
+  /**
+   * Through the session scope (`ISessionDeepResearchService`) — no klient
+   * facade exists. The v2 service is the port of v1's `startDeepResearch`:
+   * same four-phase pipeline (Plan → Research → Verify → cited Report /
+   * Partial), same result shape, same warning-event progress, and the same
+   * main-agent handoff reminder. The main agent is materialized first
+   * (the service spawns its research subagents under `main`).
+   */
+  override async startDeepResearch(
+    input: SessionIdRpcInput & {
+      readonly query: string;
+      readonly breadth?: number;
+      readonly onProgress?: (progress: { readonly phase: string; readonly detail: string }) => void;
+    },
+  ): Promise<DeepResearchResult> {
+    const session = this.requireLiveSession(input.sessionId);
+    await this.materializeMainAgent(session);
+    return session.accessor.get(ISessionDeepResearchService).start({
+      query: input.query,
+      breadth: input.breadth,
+      onProgress: input.onProgress,
+    });
   }
 
   /**

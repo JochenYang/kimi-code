@@ -8,6 +8,7 @@ import { CapabilityErrors } from '#/app/capability/errors';
 import { CronErrors } from '#/features/cron/errors';
 import { DebugErrors } from '#/debug/errors';
 import { EventErrors } from '#/app/event/errors';
+import { DeepResearchErrors } from '#/session/deepResearch/errors';
 import { FileErrors } from '#/app/file/fileService';
 import { FsErrors } from '#/workspace/workspaceFs/internal/errors';
 import { FullCompactionErrors } from '#/agent/fullCompaction/errors';
@@ -45,6 +46,7 @@ export { ConfigErrors } from '#/app/config/errors';
 export { CapabilityErrors } from '#/app/capability/errors';
 export { CronErrors } from '#/features/cron/errors';
 export { DebugErrors } from '#/debug/errors';
+export { DeepResearchErrors } from '#/session/deepResearch/errors';
 export { FileErrors } from '#/app/file/fileService';
 export { FsErrors } from '#/workspace/workspaceFs/internal/errors';
 export { FullCompactionErrors } from '#/agent/fullCompaction/errors';
@@ -80,6 +82,7 @@ export const ErrorCodes = {
   ...CapabilityErrors.codes,
   ...CronErrors.codes,
   ...DebugErrors.codes,
+  ...DeepResearchErrors.codes,
   ...FileErrors.codes,
   ...FsErrors.codes,
   ...FullCompactionErrors.codes,

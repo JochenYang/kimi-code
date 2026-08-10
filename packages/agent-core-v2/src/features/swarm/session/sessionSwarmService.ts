@@ -93,10 +93,16 @@ export class SessionSwarmService implements ISessionSwarmService {
     };
     const maxConcurrency = resolveSwarmMaxConcurrency();
     const promise = new AgentRunBatch(launcher, linkedTasks, { maxConcurrency }).run();
-    void promise.finally(() => {
-      for (const unlink of unlinks) unlink();
-      if (this.inFlight.get(callerAgentId) === controller) this.inFlight.delete(callerAgentId);
-    });
+    void promise
+      .finally(() => {
+        for (const unlink of unlinks) unlink();
+        if (this.inFlight.get(callerAgentId) === controller) this.inFlight.delete(callerAgentId);
+      })
+      // The batch promise itself is observed by the caller; this finally
+      // chain is fire-and-forget cleanup only. Without a catch, a batch that
+      // rejects (e.g. a non-user abort) would surface as an unhandled
+      // rejection and crash the process.
+      .catch(() => undefined);
     return promise;
   }
 

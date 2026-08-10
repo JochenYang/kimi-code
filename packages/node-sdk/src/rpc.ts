@@ -76,6 +76,7 @@ import type {
   UploadFileOptions,
   WorkspaceTrustInfo,
 } from '#/types';
+import type { DeepResearchResult } from '#/types';
 
 const MAIN_AGENT_ID = 'main';
 
@@ -616,15 +617,13 @@ export abstract class SDKRpcClientBase {
       readonly breadth?: number;
       readonly onProgress?: (progress: { readonly phase: string; readonly detail: string }) => void;
     },
-  ) {
-    const rpc = await this.getRpc();
-    return rpc.startDeepResearch({
-      sessionId: input.sessionId,
-      agentId: this.interactiveAgentId,
-      query: input.query,
-      breadth: input.breadth,
-      onProgress: input.onProgress,
-    });
+  ): Promise<DeepResearchResult> {
+    void input;
+    // The v1 in-process engine no longer ships deep research — the v2 client
+    // (`SDKRpcClientV2`) overrides this method with the session-scope service.
+    throw new Error(
+      'startDeepResearch requires the v2 engine (agent-core-v2); the v1 engine no longer supports it',
+    );
   }
 
   async cancel(input: SessionIdRpcInput): Promise<void> {

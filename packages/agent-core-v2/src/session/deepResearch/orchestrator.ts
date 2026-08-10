@@ -1,18 +1,16 @@
 /**
- * DeepResearchOrchestrator — product contract:
- *
- * Align with Grok Build's *four-phase semantics*
- * (Plan → Research → Verify → cited Report / Partial), not its workflow-engine
- * shape (no Rhai DSL, no agent_budget journal, no /workflows dashboard).
+ * `deepResearch` domain — the four-phase orchestrator:
+ * Plan → Research → Verify → cited Report (or Partial on degradation).
  *
  * Stateless orchestration over a `DeepResearchHost`: the host spawns subagents
- * and writes the report; this class owns phase order, schema validation, caps,
- * and partial aggregation. Fully testable with a fake host.
+ * (research and verification phases fan out to parallel subagents) and writes
+ * the report; this class owns phase order, schema validation, caps, and
+ * partial aggregation. Fully testable with a fake host.
  */
 
 import { randomUUID } from 'node:crypto';
 
-import { isAbortError } from '../../loop/errors';
+import { isAbortError } from '#/_base/utils/abort';
 import { PlanOutputSchema, ResearchOutputSchema, VerifyOutputSchema, tryParseJson } from './schemas';
 import { buildPlanPrompt, buildResearchPrompt, buildVerifyPrompt, buildSynthesisPrompt } from './prompts';
 import { buildFullReport, buildChatReport } from './report-builder';
