@@ -475,6 +475,41 @@ this.host.recordSessionActivity();
     this.host.showNotice(title, detail);
   }
 
+  private handleStepRetrying(event: TurnStepRetryingEvent): void {
+    // The failure may arrive mid-stream, after thinking/assistant deltas have
+    // parked the pane in `thinking`/`composing` — drive it back to waiting so
+    // the retry label and detail actually render during the backoff.
+    this.host.patchLivePane({ mode: 'waiting' });
+    this.host.setAppState({
+      streamingPhase: 'waiting',
+      stepRetry: {
+        nextAttempt: event.nextAttempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+        errorName: event.errorName,
+        errorMessage: event.errorMessage,
+        statusCode: event.statusCode,
+        phase: 'backoff',
+      },
+    });
+    // Both engines sleep for `delayMs` before the next attempt runs, but only
+    // v2 re-emits `turn.step.started` for it — flip the phase on a timer so the
+    // stale countdown drops on the legacy engine too.
+    this.clearStepRetryAttemptTimer();
+    this.stepRetryAttemptTimer = setTimeout(() => {
+      this.stepRetryAttemptTimer = undefined;
+      const retry = this.host.state.appState.stepRetry;
+      if (retry === null) return;
+      this.host.setAppState({ stepRetry: { ...retry, phase: 'attempt' } });
+    }, event.delayMs);
+  }
+
+  private clearStepRetry(): void {
+    this.clearStepRetryAttemptTimer();
+    if (this.host.state.appState.stepRetry === null) return;
+    this.host.setAppState({ stepRetry: null });
+  }
+
   clearStepRetryAttemptTimer(): void {
     if (this.stepRetryAttemptTimer !== undefined) {
       clearTimeout(this.stepRetryAttemptTimer);
