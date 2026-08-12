@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 const branch = 'dev';
-const upstreamRemote = 'origin';
-const forkRemote = 'jochen';
+const upstreamRemote = 'upstream';
+const forkRemote = 'origin';
 const forkBranch = branch;
 const kimiBin = resolve(process.env['USERPROFILE'] || process.env['HOME'], '.kimi-code', 'bin', 'kimi.exe');
 
