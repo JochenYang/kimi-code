@@ -20,7 +20,7 @@ import {
 import {
   ISessionSwarmService,
   type SessionSwarmRunResult,
-} from '#/session/swarm/sessionSwarm';
+} from '#/features/swarm/session/sessionSwarm';
 
 import { ISessionDeepResearchService, type StartDeepResearchInput } from './deepResearch';
 import { DeepResearchErrors } from './errors';

@@ -1130,7 +1130,7 @@ describe('AgentToolSelectService loadable-tools announcements', () => {
 });
 
 describe('post-compaction dynamic tool hot-reload', () => {
-  it('reloads recently used MCP tools after compaction.completed', () => {
+  it('reloads recently used MCP tools after compaction.completed', async () => {
     flagEnabled = true;
     const h = createHarness();
     registerMcp(h, new StubMcpTool(MCP_ALPHA));
@@ -1144,12 +1144,10 @@ describe('post-compaction dynamic tool hot-reload', () => {
       result: { compactedCount: 1, tokensBefore: 1, tokensAfter: 1 },
     });
 
-    const reloaded = h.contextMemory.appended.filter(
-      (message) =>
-        message.origin?.kind === 'injection' && message.origin.variant === DYNAMIC_TOOL_SCHEMA_VARIANT,
-    );
-    expect(reloaded.length).toBeGreaterThanOrEqual(1);
-    const names = reloaded.flatMap((message) => message.tools?.map((tool) => tool.name) ?? []);
+    // Schemas are declared at the next step boundary via the context injector.
+    const declared = await declareSchemas(h);
+    expect(declared).toBeDefined();
+    const names = declared?.tools?.map((tool) => tool.name) ?? [];
     expect(names).toEqual(expect.arrayContaining([MCP_ALPHA, MCP_BETA]));
   });
 
