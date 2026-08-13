@@ -26,7 +26,7 @@ import {
 import { SessionDeepResearchService } from '#/session/deepResearch/deepResearchService';
 import { DeepResearchErrors } from '#/session/deepResearch/errors';
 import type { DeepResearchResult, DeepResearchStatus } from '#/session/deepResearch/types';
-import { ISessionSwarmService, type SessionSwarmRunResult, type SessionSwarmTask } from '#/session/swarm/sessionSwarm';
+import { ISessionSwarmService, type SessionSwarmRunResult, type SessionSwarmTask } from '#/features/swarm/session/sessionSwarm';
 
 // ── Stub helpers ─────────────────────────────────────────────────────────────
 
