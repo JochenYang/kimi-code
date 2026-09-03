@@ -17,6 +17,7 @@ import {
   normalizeAPIStatusError,
   parseRetryAfterMs,
 } from '#/llm-adapter/contract/errors';
+import { isTransientHttpStatus } from '#/llm/protocol/rules/status';
 import { describe, expect, it } from 'vitest';
 
 describe('ChatProviderError', () => {
@@ -161,9 +162,10 @@ describe('isRetryableGenerateError', () => {
     expect(isRetryableGenerateError(new APIEmptyResponseError('empty'))).toBe(true);
   });
 
-  it.each([408, 409, 429, 500, 502, 503, 504, 529])(
+  it.each([408, 409, 429, 500, 502, 503, 504, 524, 529])(
     'treats HTTP %i as retryable',
     (statusCode) => {
+      expect(isTransientHttpStatus(statusCode)).toBe(true);
       expect(isRetryableGenerateError(new APIStatusError(statusCode, 'retryable', true))).toBe(true);
     },
   );
@@ -176,6 +178,7 @@ describe('isRetryableGenerateError', () => {
   });
 
   it.each([400, 401, 403, 404, 422])('treats HTTP %i as non-retryable', (statusCode) => {
+    expect(isTransientHttpStatus(statusCode)).toBe(false);
     expect(isRetryableGenerateError(new APIStatusError(statusCode, 'non-retryable', false))).toBe(false);
   });
 
