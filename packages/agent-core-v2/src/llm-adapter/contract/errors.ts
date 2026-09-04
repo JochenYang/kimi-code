@@ -62,7 +62,7 @@ function codeForStatusError(statusCode: number | undefined): ProviderErrorCode {
   return PROVIDER_API_ERROR_CODE;
 }
 
-const RETRYABLE_HTTP_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 524, 529]);
+const RETRYABLE_HTTP_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 524, 529, 554]);
 
 export class ChatProviderError extends Error2 {
   readonly diagnostics: LlmErrorDiagnostics | undefined;
