@@ -230,7 +230,7 @@ export function isRetryableGenerateError(error: unknown): boolean {
     // Transient statuses worth retrying: 408 (request timeout), 409
     // (lock/conflict timeout), 429 (rate limit), 5xx (server errors) and 529
     // (provider overloaded — the "engine is currently overloaded" case).
-    return [408, 409, 429, 500, 502, 503, 504, 524, 529].includes(error.statusCode);
+    return [408, 409, 429, 500, 502, 503, 504, 524, 529, 554].includes(error.statusCode);
   }
   // Fallback safety net: an unclassified provider failure — typically an
   // upstream gateway that forwards the original error only as text, with no
