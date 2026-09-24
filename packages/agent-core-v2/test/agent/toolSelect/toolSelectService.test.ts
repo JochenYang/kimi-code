@@ -1709,9 +1709,12 @@ describe('post-compaction dynamic tool hot-reload', () => {
     select.recordRecentToolUse(MCP_BETA);
 
     // Simulate full compaction clearing pending loaded schemas, then hot-reload.
-    h.eventBus.emit('compaction.completed', {
-      result: { compactedCount: 1, tokensBefore: 1, tokensAfter: 1 },
-    });
+    h.eventBus.publish(
+      new CompactionCompleted({
+        agentId: 'main',
+        result: { compactedCount: 1, tokensBefore: 1, tokensAfter: 1 },
+      }),
+    );
 
     // Schemas are declared at the next step boundary via the context injector.
     const declared = await declareSchemas(h);
@@ -1729,7 +1732,10 @@ describe('post-compaction dynamic tool hot-reload', () => {
     expect(select.reloadRecentAfterCompaction()).toEqual({
       toLoad: [],
       alreadyAvailable: [],
+      alreadyCallable: [],
       unknown: [],
+      suggestions: {},
+      loadable: [],
     });
   });
 });
