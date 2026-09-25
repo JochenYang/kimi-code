@@ -8,6 +8,8 @@ import {
   type LlmRecoveryRecord,
 } from '#human/llm/policy/recovery';
 import { withProtocolCapabilities } from '#human/llm/protocol/rules/model';
+import { CONTENT_PROJECTION_FLAG_ID } from './flag';
+import type { ContentProjectionOptions } from './contentProjection';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
 import { IAgentProfileService, type ProfileModelContext } from '#/agent/profile/profile';
 import { IAgentStateService } from '#/agent/state/agentState';
@@ -15,6 +17,7 @@ import { IAgentToolSelectService } from '#/agent/toolSelect/toolSelect';
 import { ISessionUsageService } from '#/session/usage/sessionUsage';
 import { cacheProbeUsage } from '#/agent/usage/cacheProbe';
 import { IConfigService } from '#/app/config/config';
+import { IFlagService } from '#/app/flag/flag';
 import {
   APIContextOverflowError,
   APIStatusError,
@@ -71,6 +74,7 @@ import {
   createStructureRecovery,
   createStructureResolver,
   hasStrictStructureRecovery,
+  createContentProjectionResolver,
 } from './projectionPolicy';
 import { createToolSelectResolver } from './toolSelectPolicy';
 import type { AgentMediaPolicyFactory } from './mediaPolicy';
@@ -127,6 +131,7 @@ interface ResolvedLLMRequest {
   readonly promptCacheProbe: 'compaction' | undefined;
   readonly source: AgentLLMRequestSource | undefined;
   readonly logFields: AgentLLMRequestLogFields;
+  readonly contextWindow: number;
 }
 
 interface LLMRequestLogInput {
@@ -195,6 +200,7 @@ export class AgentLoopRequester implements LoopRequester {
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
     @IAgentStateService private readonly states: IAgentStateService,
     @IBootstrapService private readonly bootstrap: IBootstrapService,
+    @IFlagService private readonly flags: IFlagService,
   ) {
     this.projector = new AgentLoopProjector(log, telemetry, states);
     this.states.contributeState(llmRequestTraceKey);
@@ -370,6 +376,11 @@ export class AgentLoopRequester implements LoopRequester {
     const toolSelectResolver = createToolSelectResolver(this.toolSelect);
     const structureResolver = createStructureResolver(this.projector);
     const structureRecovery = createStructureRecovery(this.projector);
+    const contentPolicy = this.contentProjectionPolicy(request.source, request.contextWindow);
+    const contentResolver =
+      contentPolicy === undefined
+        ? undefined
+        : createContentProjectionResolver(this.projector, contentPolicy);
     let previousMediaCount: number | undefined;
     let previousMediaRecovery: LlmRecoveryRecord | undefined;
     const run = async (): Promise<AgentLLMRequestFinish> => {
@@ -403,6 +414,7 @@ export class AgentLoopRequester implements LoopRequester {
           resolvers: [
             toolSelectResolver,
             ...(mediaPolicy === undefined ? [] : [mediaPolicy.toolResolver]),
+            ...(contentResolver === undefined ? [] : [contentResolver]),
             structureResolver,
             ...(mediaPolicy === undefined ? [] : [mediaPolicy.resolver]),
           ],
@@ -569,7 +581,17 @@ export class AgentLoopRequester implements LoopRequester {
         request.source,
       );
       if (usage !== undefined) {
-        this.tokenCounting.measured(this.scopeContext.agentContext, request.messages, [message], usage);
+        this.tokenCounting.measured(
+          this.scopeContext.agentContext,
+          request.messages,
+          [message],
+          usage,
+          this.tokenCounting.requestSize({
+            systemPrompt: input.systemPrompt,
+            tools: providerVisibleTools(input.tools),
+            messages: input.messages,
+          }),
+        );
       }
       this.logResponse(request.logFields, usage ?? emptyUsage(), timing);
 
@@ -723,6 +745,17 @@ export class AgentLoopRequester implements LoopRequester {
     });
   }
 
+  private contentProjectionPolicy(
+    source: AgentLLMRequestSource | undefined,
+    contextWindow: number,
+  ): ContentProjectionOptions | undefined {
+    if (source?.type !== 'turn') return undefined;
+    if (this.scopeContext.forkedFrom !== undefined) return undefined;
+    if (!this.flags.enabled(CONTENT_PROJECTION_FLAG_ID)) return undefined;
+    if (!(contextWindow > 0)) return undefined;
+    return { contextWindow };
+  }
+
   private resolveRequest(overrides: AgentLLMRequestOverrides): ResolvedLLMRequest {
     const turnConfig = this.resolveTurnConfig(overrides.source);
     const resolved = turnConfig?.resolved ?? this.profile.resolveModelContext();
@@ -765,6 +798,8 @@ export class AgentLoopRequester implements LoopRequester {
       promptCacheProbe: overrides.promptCacheProbe,
       source: overrides.source,
       logFields: logFieldsForSource(overrides.source),
+      contextWindow:
+        resolved.modelCapabilities.max_input_tokens ?? resolved.modelCapabilities.max_context_tokens,
     };
   }
 

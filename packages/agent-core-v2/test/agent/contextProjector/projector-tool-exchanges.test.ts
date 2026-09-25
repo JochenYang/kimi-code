@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { ILogService, type ILogger } from '#/_base/log/log';
 import type { ContextMessage } from '#/agent/contextMemory/types';
+import {
+  applyContentProjection,
+  computeContentProtection,
+  verifyContentProjectionInvariants,
+} from '#/agent/loop/contentProjection';
 import { AgentLoopProjector } from '#/agent/loop/projector';
 import { IAgentStateService } from '#/agent/state/agentState';
 import { AgentStateService } from '#/agent/state/agentStateService';
@@ -941,6 +946,240 @@ describe('projector tool-exchange normalization', () => {
         type: 'image_url',
         imageUrl: { url, id: 'new-id' },
       });
+    });
+  });
+
+  describe('project with content condensation policy', () => {
+    const AGED_RESULT = `ERROR: boom\n${'x'.repeat(4000)}`;
+
+    function exchanges(count: number): ContextMessage[] {
+      return Array.from({ length: count }, (_, index) => [
+        user(`note-${index} ${'y'.repeat(200)}`),
+        assistant(`step-${index}`),
+      ]).flat();
+    }
+
+    function textOf(message: Message | undefined): string {
+      const part = message?.content[0];
+      return part?.type === 'text' ? part.text : '';
+    }
+
+    function condense(history: readonly ContextMessage[], contextWindow: number): readonly Message[] {
+      return projector.projectContent(projector.project(history), { contextWindow });
+    }
+
+    it('leaves the request untouched below the soft threshold', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        user('next'),
+      ];
+      const projected = condense(history, 1_000_000);
+
+      expect(textOf(projected[2])).toBe(AGED_RESULT);
+      expect(telemetryRecords).toEqual([]);
+    });
+
+    it('condenses an aged oversized tool result outside the protected tail', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        ...exchanges(6),
+        user('recent'),
+      ];
+      const projected = condense(history, 1_000);
+
+      const condensed = textOf(projected[2]);
+      expect(condensed).toContain('[context-condensed:');
+      expect(condensed).toContain('salient lines kept');
+      expect(condensed).toContain('ERROR: boom');
+      expect(condensed.length).toBeLessThan(AGED_RESULT.length);
+      expect(projected[2]).toMatchObject({ role: 'tool', toolCallId: 'c1' });
+      expect(telemetryRecords).toEqual([
+        {
+          event: 'context_projection_condensed',
+          properties: expect.objectContaining({ large_cuts: 1, repeated_folds: 0 }),
+        },
+      ]);
+    });
+
+    it('condenses aged results inside a single long turn', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        ...exchanges(6),
+        assistant('', ['c2']),
+        toolResult('c2', AGED_RESULT),
+      ];
+      const projected = condense(history, 1_000);
+
+      expect(textOf(projected[2])).toContain('[context-condensed:');
+      expect(textOf(projected.at(-1))).toBe(AGED_RESULT);
+    });
+
+    it('keeps the protected tail and the in-flight exchange untouched', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        ...exchanges(6),
+        user('recent'),
+        assistant('', ['c2']),
+        toolResult('c2', AGED_RESULT),
+      ];
+      const projected = condense(history, 1_000);
+
+      expect(textOf(projected[2])).toContain('[context-condensed:');
+      expect(textOf(projected.at(-1))).toBe(AGED_RESULT);
+    });
+
+    it('folds a repeated identical output into a marker', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1', 'c2']),
+        toolResult('c1', AGED_RESULT),
+        toolResult('c2', AGED_RESULT),
+        ...exchanges(6),
+        user('recent'),
+      ];
+      const projected = condense(history, 1_000);
+
+      expect(textOf(projected[2])).toContain('[context-condensed:');
+      expect(textOf(projected[3])).toContain('[repeated:');
+      expect(textOf(projected[3])).toContain('original_chars=');
+      expect(telemetryRecords).toEqual([
+        {
+          event: 'context_projection_condensed',
+          properties: expect.objectContaining({ large_cuts: 1, repeated_folds: 1 }),
+        },
+      ]);
+    });
+
+    it('leaves a tool result carrying media untouched', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        {
+          role: 'tool' as const,
+          content: [
+            { type: 'text' as const, text: AGED_RESULT },
+            { type: 'image_url' as const, imageUrl: { url: 'data:image/png;base64,AAAA' } },
+          ],
+          toolCalls: [],
+          toolCallId: 'c1',
+        },
+        ...exchanges(6),
+        user('recent'),
+      ];
+      const projected = condense(history, 1_000);
+
+      expect(projected[2]?.content.some((part) => part.type === 'image_url')).toBe(true);
+      expect(textOf(projected[2])).toBe(AGED_RESULT);
+    });
+
+    it('produces identical output for identical input', () => {
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        ...exchanges(6),
+        user('recent'),
+      ];
+
+      const first = condense(history, 1_000);
+      const second = condense(history, 1_000);
+
+      expect(second).toEqual(first);
+    });
+
+    it('skips with a reason for empty messages, a missing window, or nothing reducible', () => {
+      expect(applyContentProjection([], { contextWindow: 1_000 }).stats.skippedReason).toBe(
+        'empty-messages',
+      );
+      const history = [
+        user('go'),
+        assistant('', ['c1']),
+        toolResult('c1', AGED_RESULT),
+        user('next'),
+      ];
+      expect(applyContentProjection(history, { contextWindow: 0 }).stats.skippedReason).toBe(
+        'no-context-window',
+      );
+      const small = [user('go'), assistant('', ['c1']), toolResult('c1', 'tiny'), user('next')];
+      expect(applyContentProjection(small, { contextWindow: 2 }).stats.skippedReason).toBe(
+        'no-reducible-content',
+      );
+    });
+
+    it('protects the token tail and the in-flight exchange', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          content: [{ type: 'text', text: 'x'.repeat(400) }],
+          toolCalls: [],
+          toolCallId: 'old',
+        },
+        {
+          role: 'tool',
+          content: [{ type: 'text', text: 'y'.repeat(400) }],
+          toolCalls: [],
+          toolCallId: 'mid',
+        },
+        { role: 'user', content: [{ type: 'text', text: 'recent' }], toolCalls: [] },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'working' }],
+          toolCalls: [{ type: 'function', id: 'live', name: 'Bash', arguments: '{}' }],
+        },
+        {
+          role: 'tool',
+          content: [{ type: 'text', text: 'z'.repeat(20) }],
+          toolCalls: [],
+          toolCallId: 'live',
+        },
+      ];
+
+      const protection = computeContentProtection(messages, 100);
+
+      expect(protection.has(0)).toBe(false);
+      expect(protection.has(1)).toBe(true);
+      expect(protection.has(2)).toBe(true);
+      expect(protection.has(3)).toBe(true);
+      expect(protection.has(4)).toBe(true);
+    });
+
+    it('rejects a condensation that changes structure or protected content', () => {
+      const original: Message[] = [
+        { role: 'tool', content: [{ type: 'text', text: 'one' }], toolCalls: [], toolCallId: 'a' },
+      ];
+
+      expect(verifyContentProjectionInvariants(original, original, new Set([0]))).toBeUndefined();
+      expect(
+        verifyContentProjectionInvariants(
+          original,
+          [{ ...original[0]!, content: [{ type: 'text', text: 'two' }] }],
+          new Set([0]),
+        ),
+      ).toBe('protected-message-modified@0');
+      expect(
+        verifyContentProjectionInvariants(original, [{ ...original[0]!, role: 'user' }], new Set()),
+      ).toBe('role-changed@0');
+      expect(
+        verifyContentProjectionInvariants(original, [{ ...original[0]!, toolCallId: 'b' }], new Set()),
+      ).toBe('tool-call-id-changed@0');
+      expect(
+        verifyContentProjectionInvariants(
+          original,
+          [{ ...original[0]!, content: [] }],
+          new Set(),
+        ),
+      ).toBe('empty-tool-content@0');
+      expect(
+        verifyContentProjectionInvariants(original, [...original, original[0]!], new Set()),
+      ).toBe('message-count-changed');
     });
   });
 });

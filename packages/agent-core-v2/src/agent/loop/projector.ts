@@ -1,9 +1,14 @@
 import { ILogService } from '#/_base/log/log';
+import type { ContextProjectionCondensedEvent } from '#/app/telemetry/events';
+import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { defineState } from '#/state/state';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentStateService } from '#/agent/state/agentState';
 import type { Message } from '#human/llm/message';
-import { ITelemetryService } from '#/app/telemetry/telemetry';
+import {
+  applyContentProjection,
+  type ContentProjectionOptions,
+} from './contentProjection';
 import {
   project,
   projectStrict,
@@ -36,6 +41,33 @@ export class AgentLoopProjector {
 
   project(messages: readonly ContextMessage[], strict = false): readonly Message[] {
     return this.projectWithTrace(messages, strict ? projectStrict : project);
+  }
+
+  projectContent(
+    messages: readonly Message[],
+    options: ContentProjectionOptions,
+  ): readonly Message[] {
+    const result = applyContentProjection(messages, options);
+    const stats = result.stats;
+    if (stats.applied || stats.invariantViolation !== undefined) {
+      const properties: ContextProjectionCondensedEvent = {
+        original_tokens: stats.originalTokens,
+        projected_tokens: stats.projectedTokens,
+        chars_removed: Math.max(0, stats.originalChars - stats.projectedChars),
+        repeated_folds: stats.repeatedFolds,
+        large_cuts: stats.largeCuts,
+        invariant_violation: stats.invariantViolation,
+      };
+      this.telemetry.track2('context_projection_condensed', properties);
+    }
+    if (stats.invariantViolation !== undefined) {
+      this.log.warn('discarded context condensation because it broke request invariants', {
+        invariantViolation: stats.invariantViolation,
+        repeatedFolds: stats.repeatedFolds,
+        largeCuts: stats.largeCuts,
+      });
+    }
+    return result.messages;
   }
 
   private projectWithTrace(
