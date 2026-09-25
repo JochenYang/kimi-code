@@ -3,6 +3,8 @@ import type { Message } from '#/llm-adapter/contract/message';
 
 import type { ContextMessage } from '#/agent/contextMemory/types';
 
+import type { ContentProjectionOptions } from './contentProjection';
+
 declare const mediaStripSnapshotBrand: unique symbol;
 
 export interface MediaStripSnapshot {
@@ -12,6 +14,7 @@ export interface MediaStripSnapshot {
 export interface ProjectionPolicy {
   readonly structure?: 'strict';
   readonly media?: 'degraded' | { readonly strip: MediaStripSnapshot };
+  readonly content?: ContentProjectionOptions;
 }
 
 export interface IAgentContextProjectorService {
