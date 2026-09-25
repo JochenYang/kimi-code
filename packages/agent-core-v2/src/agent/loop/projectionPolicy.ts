@@ -2,6 +2,7 @@ import type { LlmRecovery, LlmRecoveryRecord } from '@moonshot-ai/core/llm/polic
 import type { LlmResolver } from '@moonshot-ai/core/llm/policy/resolver';
 import type { LlmRequest } from '@moonshot-ai/core/llm/request';
 
+import type { ContentProjectionOptions } from './contentProjection';
 import type { AgentLoopProjector } from './projector';
 
 export const STRUCTURE_RECOVERY_STRATEGY = 'structure';
@@ -36,6 +37,22 @@ export function createStructureResolver(projector: AgentLoopProjector): LlmResol
       hasStrictStructureRecovery(control.appliedRecoveries)
         ? request
         : projectRequest(request, projector, false),
+  };
+}
+
+export function createContentProjectionResolver(
+  projector: AgentLoopProjector,
+  options: ContentProjectionOptions,
+): LlmResolver {
+  return {
+    id: 'content-projection',
+    resolve: async (request) => ({
+      ...request,
+      content: {
+        ...request.content,
+        messages: projector.projectContent(request.content.messages, options),
+      },
+    }),
   };
 }
 

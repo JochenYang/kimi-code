@@ -8,7 +8,7 @@ import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
 import { cacheProbeUsage } from '#/agent/usage/cacheProbe';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
-import type { ApiErrorEvent, CacheBreakDetectedEvent } from '#/app/telemetry/events';
+import type { ApiErrorEvent, CacheBreakDetectedEvent, ContextProjectionCondensedEvent } from '#/app/telemetry/events';
 import { unwrapErrorCause } from '#/errors';
 import { countMediaParts } from '@moonshot-ai/core/llm/builtin/policy/media-degrade';
 import type { Message, ToolDescription as Tool } from '@moonshot-ai/core/llm/message';
@@ -28,6 +28,7 @@ import { IEventDispatcher } from '#/state/eventDispatcher';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
 import { ISessionUsageService } from '#/session/usage/sessionUsage';
 import { ISessionRequestAttributionService } from '#/session/requestAttribution/requestAttribution';
+import type { ContentProjectionStats } from './contentProjection';
 import { defineState } from '#/state/state';
 import { summarizeProjectionRepairs, type ProjectionAnomaly } from './projection';
 import { hasStrictStructureRecovery } from './projectionPolicy';
@@ -380,6 +381,27 @@ export class AgentLoopRequestObserver {
       whitespace_dropped: whitespaceDropped,
       vacuous_dropped: vacuousDropped,
     });
+  }
+
+  reportContentProjection(stats: ContentProjectionStats): void {
+    if (stats.applied || stats.invariantViolation !== undefined) {
+      const properties: ContextProjectionCondensedEvent = {
+        original_tokens: stats.originalTokens,
+        projected_tokens: stats.projectedTokens,
+        chars_removed: Math.max(0, stats.originalChars - stats.projectedChars),
+        repeated_folds: stats.repeatedFolds,
+        large_cuts: stats.largeCuts,
+        invariant_violation: stats.invariantViolation,
+      };
+      this.telemetry.track2('context_projection_condensed', properties);
+    }
+    if (stats.invariantViolation !== undefined) {
+      this.log.warn('discarded context condensation because it broke request invariants', {
+        invariantViolation: stats.invariantViolation,
+        repeatedFolds: stats.repeatedFolds,
+        largeCuts: stats.largeCuts,
+      });
+    }
   }
 
   private logRequest(request: ResolvedRequestContext, input: RequestLogInput): void {

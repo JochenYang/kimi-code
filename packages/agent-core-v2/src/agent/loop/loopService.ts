@@ -13,6 +13,7 @@ import { AgentLoopRequestObserver } from './requestObservation';
 import { createAgentMediaPolicy, type AgentMediaPolicy, type AgentMediaPolicyFactory } from './mediaPolicy';
 import {
   agentLLMRequestLogFields,
+  type AgentLLMRequestSource,
   type CoreLoopRequester,
   type CoreLoopRequesterOptions,
   type LoopRequester,
@@ -21,7 +22,13 @@ import {
   type ResolvedRequestContext,
 } from './requesterContract';
 import { AgentLoopProjector } from './projector';
-import { createStructureRecovery, createStructureResolver } from './projectionPolicy';
+import {
+  createContentProjectionResolver,
+  createStructureRecovery,
+  createStructureResolver,
+} from './projectionPolicy';
+import { CONTENT_PROJECTION_FLAG_ID } from './flag';
+import type { ContentProjectionOptions } from './contentProjection';
 import { createToolSelectResolver } from './toolSelectPolicy';
 import { RequestMetadataTracker, requestMetadataHeaders } from './requestMetadata';
 import { IAgentMediaResolverService } from '#/agent/media/mediaResolver';
@@ -46,6 +53,7 @@ import { IAgentTaskOutputService, taskNotificationId } from '#/agent/task/taskOu
 import { restoreTaskCompletions } from '#/agent/task/completionRestore';
 import { completionMessage as coreCompletionMessage, type ToolCompletionInput } from '@moonshot-ai/core/loop/tool/outcome';
 import { IConfigService } from '#/app/config/config';
+import { IFlagService } from '#/app/flag/flag';
 import {
   createUserMessage,
   type ContentPart,
@@ -208,6 +216,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     @IAgentToolExecutorService private readonly toolExecutor: IAgentToolExecutorService,
     @IAgentToolRegistryService _toolRegistry: IAgentToolRegistryService,
     @IConfigService private readonly config: IConfigService,
+    @IFlagService private readonly flags: IFlagService,
     @IEventDispatcher private readonly dispatcher: IEventDispatcher,
     @IEventBus private readonly events: IEventBus,
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
@@ -236,7 +245,10 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     const space = this.scopeContext.agentContext.space;
     if (space instanceof AgentSpaceImpl) this._register(space._setHistoryProvider(() => this.history()));
     this.observer = instantiation.createInstance(AgentLoopRequestObserver);
-    this.projector = new AgentLoopProjector((anomalies) => this.observer.reportProjectionRepairs(anomalies));
+    this.projector = new AgentLoopProjector(
+      (anomalies) => this.observer.reportProjectionRepairs(anomalies),
+      (stats) => this.observer.reportContentProjection(stats),
+    );
     this.requestMetadata = new RequestMetadataTracker(scopeContext, dispatcher, attribution);
     this.mediaPolicyFactory = (model, request) => createAgentMediaPolicy(mediaResolver, model, request);
     this.requester = {
@@ -694,6 +706,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
   }
 
   private corePolicy(request: ResolvedRequestContext, mediaPolicy: AgentMediaPolicy): LlmPolicy {
+    const contentProjection = this.contentProjectionPolicy(request.source);
     return {
       retry: {
         maxAttemptsPerStep:
@@ -711,9 +724,24 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         createToolSelectResolver(this.toolSelect, request.dynamicTools),
         mediaPolicy.toolResolver,
         createStructureResolver(this.projector),
+        ...(contentProjection === undefined
+          ? []
+          : [createContentProjectionResolver(this.projector, contentProjection)]),
         mediaPolicy.resolver,
       ],
     };
+  }
+
+  private contentProjectionPolicy(
+    source: AgentLLMRequestSource,
+  ): ContentProjectionOptions | undefined {
+    if (source.type !== 'turn') return undefined;
+    if (this.scopeContext.forkedFrom !== undefined) return undefined;
+    if (!this.flags.enabled(CONTENT_PROJECTION_FLAG_ID)) return undefined;
+    const spec = this.resolveModelContext().model;
+    const contextWindow = spec.maxInputSize ?? spec.maxContextSize;
+    if (contextWindow === undefined || !(contextWindow > 0)) return undefined;
+    return { contextWindow };
   }
 
   private async generateCoreRequest(

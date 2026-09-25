@@ -2,6 +2,7 @@
 import { z } from 'zod';
 
 import { AgentEvent2 } from '#/app/event/event2';
+import type { TokenCalibrationState } from '#/agent/contextSize/tokenCalibration';
 
 export interface TokenAnchor {
   readonly length: number;
@@ -12,6 +13,7 @@ export interface TokenAnchor {
 export interface TokenCountingState {
   readonly anchors: readonly TokenAnchor[];
   readonly tokens: number;
+  readonly calibration: TokenCalibrationState;
 }
 
 const sizeSchema = z.object({
@@ -20,15 +22,22 @@ const sizeSchema = z.object({
   tokens: z.number(),
 });
 
-export class TokenCountingMeasured extends AgentEvent2<z.infer<typeof sizeSchema>> {
+const measuredSchema = sizeSchema.extend({
+  estimated: z.number().optional(),
+  measuredInput: z.number().optional(),
+});
+
+export class TokenCountingMeasured extends AgentEvent2<z.infer<typeof measuredSchema>> {
   static override readonly type = 'token_counting.measured';
   static override readonly durable = true;
-  static override readonly schema = sizeSchema;
+  static override readonly schema = measuredSchema;
 }
 export interface TokenCountingMeasured {
   readonly agentId: string;
   readonly length: number;
   readonly tokens: number;
+  readonly estimated?: number;
+  readonly measuredInput?: number;
 }
 
 export class TokenCountingTruncated extends AgentEvent2<z.infer<typeof sizeSchema>> {
