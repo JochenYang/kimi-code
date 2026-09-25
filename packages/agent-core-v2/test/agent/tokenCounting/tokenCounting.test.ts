@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { IAgentContextMemoryService, IAgentProfileService } from '#/index';
+import { emptyTokenCalibration } from '#/agent/contextSize/tokenCalibration';
 import { TurnEnded } from '#/agent/loop/turnOps';
 import {
   anchorsEqual,
@@ -69,7 +70,7 @@ function referenceFold(events: readonly ReferenceEvent[]): TokenCountingState {
       tokens = clamped;
     }
   }
-  return { anchors, tokens };
+  return { anchors, tokens, calibration: emptyTokenCalibration() };
 }
 
 async function dispatchReference(ctx: TestAgentContext, event: ReferenceEvent): Promise<void> {
@@ -142,10 +143,14 @@ describe('Agent token counting', () => {
     expect(exchangeTotal).toBeGreaterThan(0);
     expect(context.get()).toHaveLength(2);
 
-    expect(tokenCountingState(ctx)).toEqual({
-      anchors: [{ length: context.get().length, tokens: exchangeTotal, measured: true }],
-      tokens: exchangeTotal,
-    });
+    const state = tokenCountingState(ctx);
+    expect(state.anchors).toEqual([
+      { length: context.get().length, tokens: exchangeTotal, measured: true },
+    ]);
+    expect(state.tokens).toBe(exchangeTotal);
+    expect(state.calibration.samples).toBe(1);
+    expect(state.calibration.factor).toBeGreaterThan(0);
+    expect(state.calibration.factor).toBeLessThanOrEqual(4);
 
     const size = tokenCounting.get();
     expect(size.measured).toBe(exchangeTotal);
@@ -417,6 +422,7 @@ describe('Agent token counting', () => {
         { length: 4, tokens: 200, measured: true },
       ],
       tokens: 200,
+      calibration: emptyTokenCalibration(),
     });
 
     await dispatchReference(ctx, { kind: 'turn', length: 6, tokens: 250 });
@@ -427,6 +433,7 @@ describe('Agent token counting', () => {
         { length: 6, tokens: 250, measured: false },
       ],
       tokens: 250,
+      calibration: emptyTokenCalibration(),
     });
 
     const pinned = tokenCountingState(ctx);
@@ -441,6 +448,7 @@ describe('Agent token counting', () => {
         { length: 6, tokens: 250, measured: false },
       ],
       tokens: 260,
+      calibration: emptyTokenCalibration(),
     });
 
     await dispatchReference(ctx, { kind: 'measured', length: 4, tokens: 300 });
@@ -450,12 +458,14 @@ describe('Agent token counting', () => {
         { length: 4, tokens: 300, measured: true },
       ],
       tokens: 300,
+      calibration: emptyTokenCalibration(),
     });
 
     await dispatchReference(ctx, { kind: 'truncated', length: 3, tokens: 150 });
     expect(tokenCountingState(ctx)).toEqual({
       anchors: [{ length: 2, tokens: 100, measured: true }],
       tokens: 150,
+      calibration: emptyTokenCalibration(),
     });
 
     const afterTruncate = tokenCountingState(ctx);
@@ -466,6 +476,7 @@ describe('Agent token counting', () => {
     expect(tokenCountingState(ctx)).toEqual({
       anchors: [{ length: 1, tokens: 50, measured: false }],
       tokens: 50,
+      calibration: emptyTokenCalibration(),
     });
 
     await dispatchReference(ctx, { kind: 'measured', length: 3.9, tokens: -10 });
@@ -475,12 +486,14 @@ describe('Agent token counting', () => {
         { length: 3, tokens: 0, measured: true },
       ],
       tokens: 0,
+      calibration: emptyTokenCalibration(),
     });
 
     await dispatchReference(ctx, { kind: 'measured', length: -5, tokens: 10 });
     expect(tokenCountingState(ctx)).toEqual({
       anchors: [{ length: 0, tokens: 10, measured: true }],
       tokens: 10,
+      calibration: emptyTokenCalibration(),
     });
   });
 
