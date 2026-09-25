@@ -10,6 +10,8 @@ import {
   type ProjectionPolicy,
 } from '#/agent/contextProjector/contextProjector';
 import { MEDIA_DEGRADE_KEEP_RECENT } from '#/agent/contextProjector/mediaProjection';
+import type { ContentProjectionOptions } from '#/agent/contextProjector/contentProjection';
+import { CONTENT_PROJECTION_FLAG_ID } from '#/agent/contextProjector/flag';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
 import { IAgentProfileService, type ProfileModelContext } from '#/agent/profile/profile';
 import { IAgentStateService } from '#/agent/state/agentState';
@@ -18,6 +20,7 @@ import { IAgentToolSelectService } from '#/agent/toolSelect/toolSelect';
 import { IAgentMediaResolverService } from '#/agent/media/mediaResolver';
 import { ISessionUsageService } from '#/session/usage/sessionUsage';
 import { IConfigService } from '#/app/config/config';
+import { IFlagService } from '#/app/flag/flag';
 import {
   APIContextOverflowError,
   APIRequestTooLargeError,
@@ -114,6 +117,7 @@ interface ResolvedLLMRequest {
     | undefined;
   readonly source: AgentLLMRequestSource | undefined;
   readonly logFields: AgentLLMRequestLogFields;
+  readonly contextWindow: number;
 }
 
 interface LLMRequestLogInput {
@@ -185,6 +189,7 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
     @IAgentStateService private readonly states: IAgentStateService,
     @IBootstrapService private readonly bootstrap: IBootstrapService,
+    @IFlagService private readonly flags: IFlagService,
   ) {
     this.states.contributeState(llmRequestTraceKey);
     this.states.contributeState(llmRequesterLastConfigLogSignatureKey);
@@ -360,6 +365,10 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     let policy: ProjectionPolicy | undefined =
       recoveredMedia === undefined ? undefined : { media: recoveredMedia };
     let mediaStrippedThisRequest = false;
+    const contentPolicy = this.contentProjectionPolicy(request.source, request.contextWindow);
+    if (contentPolicy !== undefined) {
+      policy = { ...policy, content: contentPolicy };
+    }
     const captureMediaStripPolicy = (): { readonly strip: MediaStripSnapshot } => {
       mediaStrippedThisRequest = true;
       const media = { strip: this.projector.captureMediaStripSnapshot(shaped) };
@@ -548,7 +557,17 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
         request.source,
       );
       if (usage !== undefined) {
-        this.tokenCounting.measured(this.scopeContext.agentContext, request.messages, [message], usage);
+        this.tokenCounting.measured(
+          this.scopeContext.agentContext,
+          request.messages,
+          [message],
+          usage,
+          this.tokenCounting.requestSize({
+            systemPrompt: input.systemPrompt,
+            tools: providerVisibleTools(input.tools),
+            messages: input.messages,
+          }),
+        );
       }
       this.logResponse(request.logFields, usage ?? emptyUsage(), timing);
 
@@ -750,6 +769,17 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     });
   }
 
+  private contentProjectionPolicy(
+    source: AgentLLMRequestSource | undefined,
+    contextWindow: number,
+  ): ContentProjectionOptions | undefined {
+    if (source?.type !== 'turn') return undefined;
+    if (this.scopeContext.forkedFrom !== undefined) return undefined;
+    if (!this.flags.enabled(CONTENT_PROJECTION_FLAG_ID)) return undefined;
+    if (!(contextWindow > 0)) return undefined;
+    return { contextWindow };
+  }
+
   private resolveRequest(
     overrides: AgentLLMRequestOverrides,
     promptCacheProbe: ResolvedLLMRequest['promptCacheProbe'],
@@ -794,6 +824,8 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       promptCacheProbe,
       source: overrides.source,
       logFields: logFieldsForSource(overrides.source),
+      contextWindow:
+        resolved.modelCapabilities.max_input_tokens ?? resolved.modelCapabilities.max_context_tokens,
     };
   }
 
