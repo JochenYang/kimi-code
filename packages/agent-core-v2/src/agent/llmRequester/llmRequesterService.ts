@@ -3,11 +3,9 @@ import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { defineState } from '#/state/state';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
-import {
-  IAgentContextProjectorService,
-  type MediaStripSnapshot,
-  type ProjectionPolicy,
-} from '#/agent/contextProjector/contextProjector';
+import { IAgentContextProjectorService, type MediaStripSnapshot, type ProjectionPolicy } from '#/agent/contextProjector/contextProjector';
+import type { ContentProjectionOptions } from '#/agent/contextProjector/contentProjection';
+import { CONTENT_PROJECTION_FLAG_ID } from '#/agent/contextProjector/flag';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
 import { IAgentProfileService, type ProfileModelContext } from '#/agent/profile/profile';
 import { IAgentStateService } from '#/agent/state/agentState';
@@ -16,6 +14,7 @@ import { IAgentToolSelectService } from '#/agent/toolSelect/toolSelect';
 import { IAgentMediaResolverService } from '#/agent/media/mediaResolver';
 import { ISessionUsageService } from '#/session/usage/sessionUsage';
 import { IConfigService } from '#/app/config/config';
+import { IFlagService } from '#/app/flag/flag';
 import {
   APIContextOverflowError,
   APIRequestTooLargeError,
@@ -107,6 +106,7 @@ interface ResolvedLLMRequest {
   readonly messages: Message[];
   readonly source: AgentLLMRequestSource | undefined;
   readonly logFields: AgentLLMRequestLogFields;
+  readonly contextWindow: number;
 }
 
 interface LLMRequestLogInput {
@@ -172,6 +172,7 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
     @IAgentStateService private readonly states: IAgentStateService,
     @IBootstrapService private readonly bootstrap: IBootstrapService,
+    @IFlagService private readonly flags: IFlagService,
   ) {
     this.states.contributeState(llmRequestTraceKey);
     this.states.contributeState(llmRequesterLastConfigLogSignatureKey);
@@ -347,6 +348,10 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
         : this.isRecoveryTurn(this.mediaDegradedTurns, request.source)
           ? { media: 'degraded' }
           : undefined;
+    const contentPolicy = this.contentProjectionPolicy(request.source, request.contextWindow);
+    if (contentPolicy !== undefined) {
+      policy = { ...policy, content: contentPolicy };
+    }
     const captureMediaStripPolicy = (): { readonly strip: MediaStripSnapshot } => {
       const snapshot = this.projector.captureMediaStripSnapshot(shaped);
       this.markMediaStrippedRecoveryTurn(snapshot, request.source);
@@ -481,7 +486,17 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
         request.source,
       );
       if (usage !== undefined) {
-        this.tokenCounting.measured(this.scopeContext.agentContext, request.messages, [message], usage);
+        this.tokenCounting.measured(
+          this.scopeContext.agentContext,
+          request.messages,
+          [message],
+          usage,
+          this.tokenCounting.requestSize({
+            systemPrompt: input.systemPrompt,
+            tools: providerVisibleTools(input.tools),
+            messages: input.messages,
+          }),
+        );
       }
       this.logResponse(request.logFields, usage ?? emptyUsage(), timing);
 
@@ -679,6 +694,17 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
     this.mediaStrippedTurns.set(source.turnId, snapshot);
   }
 
+  private contentProjectionPolicy(
+    source: AgentLLMRequestSource | undefined,
+    contextWindow: number,
+  ): ContentProjectionOptions | undefined {
+    if (source?.type !== 'turn') return undefined;
+    if (this.scopeContext.forkedFrom !== undefined) return undefined;
+    if (!this.flags.enabled(CONTENT_PROJECTION_FLAG_ID)) return undefined;
+    if (!(contextWindow > 0)) return undefined;
+    return { contextWindow };
+  }
+
   private markRecoveryTurn(set: Set<number>, source: AgentLLMRequestSource | undefined): void {
     if (source?.type !== 'turn') return;
     for (const id of set) {
@@ -718,6 +744,8 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       messages: [...messages],
       source: overrides.source,
       logFields: logFieldsForSource(overrides.source),
+      contextWindow:
+        resolved.modelCapabilities.max_input_tokens ?? resolved.modelCapabilities.max_context_tokens,
     };
   }
 

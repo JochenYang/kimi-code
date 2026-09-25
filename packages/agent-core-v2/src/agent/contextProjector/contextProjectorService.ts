@@ -1,16 +1,21 @@
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { ILogService } from '#/_base/log/log';
+import type { ContextProjectionCondensedEvent } from '#/app/telemetry/events';
+import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { defineState } from '#/state/state';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentStateService } from '#/agent/state/agentState';
 import type { Message } from '#/llm-adapter/contract/message';
-import { ITelemetryService } from '#/app/telemetry/telemetry';
 import {
   IAgentContextProjectorService,
   type MediaStripSnapshot,
   type ProjectionPolicy,
 } from './contextProjector';
+import {
+  applyContentProjection,
+  type ContentProjectionOptions,
+} from './contentProjection';
 import {
   MEDIA_DEGRADE_KEEP_RECENT,
   captureMediaStripSnapshot,
@@ -59,10 +64,42 @@ export class AgentContextProjectorService implements IAgentContextProjectorServi
       policy.structure === 'strict' ? projectStrict : project,
     );
     const media = policy.media;
-    if (media === undefined) return projected;
-    if (media === 'degraded')
-      return degradeOlderMediaParts(projected, MEDIA_DEGRADE_KEEP_RECENT, undefined, mediaPaths);
-    return stripMediaPartsBySnapshot(projected, media.strip, mediaPaths);
+    const withMedia =
+      media === undefined
+        ? projected
+        : media === 'degraded'
+          ? degradeOlderMediaParts(projected, MEDIA_DEGRADE_KEEP_RECENT, undefined, mediaPaths)
+          : stripMediaPartsBySnapshot(projected, media.strip, mediaPaths);
+    const content = policy.content;
+    if (content === undefined) return withMedia;
+    return this.projectContent(withMedia, content);
+  }
+
+  private projectContent(
+    messages: readonly Message[],
+    options: ContentProjectionOptions,
+  ): readonly Message[] {
+    const result = applyContentProjection(messages, options);
+    const stats = result.stats;
+    if (stats.applied || stats.invariantViolation !== undefined) {
+      const properties: ContextProjectionCondensedEvent = {
+        original_tokens: stats.originalTokens,
+        projected_tokens: stats.projectedTokens,
+        chars_removed: Math.max(0, stats.originalChars - stats.projectedChars),
+        repeated_folds: stats.repeatedFolds,
+        large_cuts: stats.largeCuts,
+        invariant_violation: stats.invariantViolation,
+      };
+      this.telemetry.track2('context_projection_condensed', properties);
+    }
+    if (stats.invariantViolation !== undefined) {
+      this.log.warn('discarded context condensation because it broke request invariants', {
+        invariantViolation: stats.invariantViolation,
+        repeatedFolds: stats.repeatedFolds,
+        largeCuts: stats.largeCuts,
+      });
+    }
+    return result.messages;
   }
 
   captureMediaStripSnapshot(messages: readonly ContextMessage[]): MediaStripSnapshot {

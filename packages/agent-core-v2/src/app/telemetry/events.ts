@@ -307,6 +307,15 @@ export interface ContextProjectionRepairedEvent {
   vacuous_dropped: number;
 }
 
+export interface ContextProjectionCondensedEvent {
+  original_tokens: number;
+  projected_tokens: number;
+  chars_removed: number;
+  repeated_folds: number;
+  large_cuts: number;
+  invariant_violation?: string;
+}
+
 export interface BackgroundTaskCreatedEvent {
   task_id: string;
   kind: 'bash' | 'agent' | 'question';
@@ -980,6 +989,19 @@ export const telemetryEventDefinitions = {
       assistants_merged: 'Consecutive assistant messages merged',
       whitespace_dropped: 'Whitespace-only text blocks dropped',
       vacuous_dropped: 'Messages dropped because every recorded part serialized to nothing',
+    },
+  }),
+  context_projection_condensed: defineAgentTelemetryEvent<ContextProjectionCondensedEvent>({
+    owner: 'kimi-code',
+    comment:
+      'The context projector condensed aged oversized tool results or folded repeated outputs in the outgoing request.',
+    properties: {
+      original_tokens: 'Estimated tokens of the projected request before condensation',
+      projected_tokens: 'Estimated tokens of the projected request after condensation',
+      chars_removed: 'Characters removed by condensation',
+      repeated_folds: 'Repeated tool outputs replaced with markers',
+      large_cuts: 'Aged oversized tool results cut to head/tail plus salient lines',
+      invariant_violation: 'Failed invariant that made the condensation get discarded',
     },
   }),
   background_task_created: defineAgentTelemetryEvent<BackgroundTaskCreatedEvent>({

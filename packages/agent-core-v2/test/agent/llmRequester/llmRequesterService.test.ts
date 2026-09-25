@@ -15,8 +15,15 @@ import {
 import { AgentContextProjectorService } from '#/agent/contextProjector/contextProjectorService';
 import { AgentLLMRequesterService, KIMI_CODE_INFINITE_RETRY_ENV } from '#/agent/llmRequester/llmRequesterService';
 import { IAgentLLMRequesterService } from '#/agent/llmRequester/llmRequester';
+import type { TokenCountingRequest } from '#/agent/tokenCounting/tokenCounting';
+import {
+  estimateTokens,
+  estimateTokensForMessages,
+} from '#/llm-adapter/contract/tokens';
 import { createMachineRequester } from '#/agent/loop/machine/requester';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
+import { IFlagService } from '#/app/flag/flag';
+import { CONTENT_PROJECTION_FLAG_ID } from '#/agent/contextProjector/flag';
 import {
   createTurnMachine,
   type AssistantEntry,
@@ -215,6 +222,7 @@ function createService(
     readonly mediaResolver?: Partial<IAgentMediaResolverService>;
     readonly contextMessages?: Message[];
     readonly env?: Record<string, string>;
+    readonly flags?: readonly string[];
   } = {},
 ) {
   const ix = disposables.add(new TestInstantiationService());
@@ -242,16 +250,25 @@ function createService(
       systemPrompt: 'system',
     }),
   };
-  const measuredCalls: { readonly messages: number; readonly usage: TokenUsage }[] = [];
+  const measuredCalls: {
+    readonly messages: number;
+    readonly usage: TokenUsage;
+    readonly estimated?: number;
+  }[] = [];
   const tokenCounting = {
     get: () => ({ size: 0, measured: 0, estimated: 0 }),
+    requestSize: (request: TokenCountingRequest) =>
+      estimateTokens(request.systemPrompt) +
+      request.tools.length +
+      estimateTokensForMessages(request.messages),
     measured: (
       _agent: AgentContext,
       input: readonly Message[],
       _output: readonly Message[],
       usage: TokenUsage,
+      estimated?: number,
     ) => {
-      measuredCalls.push({ messages: input.length, usage });
+      measuredCalls.push({ messages: input.length, usage, estimated });
     },
   };
   const usage = { record: () => Promise.resolve(), status: () => ({}) };
@@ -296,6 +313,9 @@ function createService(
     });
   }
   ix.stub(ISessionTokenCountingService, tokenCounting);
+  ix.stub(IFlagService, {
+    enabled: (id: string) => (options.flags ?? []).includes(id),
+  });
   ix.stub(IAgentToolRegistryService, tools);
   ix.stub(IAgentProfileService, profile);
   ix.stub(ISessionUsageService, usage);
@@ -357,6 +377,7 @@ describe('AgentLLMRequesterService measured anchors', () => {
 
     expect(measuredCalls).toHaveLength(1);
     expect(measuredCalls[0]?.usage.inputOther).toBe(40);
+    expect(measuredCalls[0]?.estimated).toBeGreaterThan(0);
   });
 });
 
@@ -892,6 +913,28 @@ describe('AgentLLMRequesterService combined recovery projections', () => {
     expect(typeof policies[2]?.media).toBe('object');
   });
 
+  it('keeps the content policy across media recovery retries', async () => {
+    const calls = { value: 0 };
+    const policies: (ProjectionPolicy | undefined)[] = [];
+    const { service } = createService(
+      createRequester(
+        calls,
+        new Error2(ErrorCodes.PROVIDER_API_ERROR, 'Provider request failed', {
+          cause: BODY_TOO_LARGE_413,
+        }),
+      ),
+      createPolicyRecordingProjector({ policies }),
+      { flags: [CONTENT_PROJECTION_FLAG_ID] },
+    );
+
+    await service.request({ source: { type: 'turn', turnId: 1, step: 1 } });
+
+    expect(policies).toEqual([
+      { content: { contextWindow: 1000 } },
+      { content: { contextWindow: 1000 }, media: 'degraded' },
+    ]);
+  });
+
   it('applies the strict repair on top of degraded media without repeating the media warning', async () => {
     const calls = { value: 0 };
     const policies: (ProjectionPolicy | undefined)[] = [];
@@ -1382,5 +1425,91 @@ describe('turn machine stream state across service-internal retries', () => {
 
     expect(doneEntries).toHaveLength(1);
     expect(doneEntries[0]?.message.toolCalls.map((toolCall) => toolCall.id)).toEqual(['call_b']);
+  });
+});
+
+describe('AgentLLMRequesterService content projection gating', () => {
+  const AGED_RESULT = `ERROR: boom\n${'x'.repeat(4000)}`;
+
+  function historyWithAgedResult(): Message[] {
+    return [
+      { role: 'user', content: [{ type: 'text', text: 'go' }], toolCalls: [] },
+      {
+        role: 'assistant',
+        content: [],
+        toolCalls: [{ type: 'function', id: 'c1', name: 'Bash', arguments: '{}' }],
+      },
+      { role: 'tool', content: [{ type: 'text', text: AGED_RESULT }], toolCalls: [], toolCallId: 'c1' },
+      ...Array.from({ length: 6 }, (_, index) => [
+        {
+          role: 'user' as const,
+          content: [{ type: 'text' as const, text: `note-${index} ${'y'.repeat(200)}` }],
+          toolCalls: [],
+        },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: `step-${index}` }],
+          toolCalls: [],
+        },
+      ]).flat(),
+      { role: 'user', content: [{ type: 'text', text: 'recent' }], toolCalls: [] },
+    ];
+  }
+
+  function toolResultText(inputs: readonly ModelRequestInput[]): string {
+    const tool = inputs[0]?.messages.find((message) => message.role === 'tool');
+    const part = tool?.content[0];
+    return part?.type === 'text' ? part.text : '';
+  }
+
+  it('condenses the aged tool result for a turn request when the flag is on', async () => {
+    const inputs: ModelRequestInput[] = [];
+    const { service, telemetryRecords } = createService(
+      createRequester({ value: 0 }, null, [], inputs),
+      undefined,
+      {
+        contextMessages: historyWithAgedResult(),
+        flags: [CONTENT_PROJECTION_FLAG_ID],
+      },
+    );
+
+    await service.request({ source: { type: 'turn', turnId: 1 } });
+
+    const condensed = toolResultText(inputs);
+    expect(condensed).toContain('[context-condensed:');
+    expect(condensed).toContain('ERROR: boom');
+    expect(condensed.length).toBeLessThan(AGED_RESULT.length);
+    expect(telemetryRecords).toEqual([
+      {
+        event: 'context_projection_condensed',
+        properties: expect.objectContaining({ large_cuts: 1, repeated_folds: 0 }),
+      },
+    ]);
+  });
+
+  it('leaves the request untouched when the flag is off', async () => {
+    const inputs: ModelRequestInput[] = [];
+    const { service, telemetryRecords } = createService(
+      createRequester({ value: 0 }, null, [], inputs),
+      undefined,
+      { contextMessages: historyWithAgedResult() },
+    );
+
+    await service.request({ source: { type: 'turn', turnId: 1 } });
+
+    expect(toolResultText(inputs)).toBe(AGED_RESULT);
+    expect(telemetryRecords).toEqual([]);
+  });
+
+  it('never condenses an operation request such as full compaction', async () => {
+    const inputs: ModelRequestInput[] = [];
+    const { service } = createService(createRequester({ value: 0 }, null, [], inputs), undefined, {
+      contextMessages: historyWithAgedResult(),
+      flags: [CONTENT_PROJECTION_FLAG_ID],
+    });
+
+    await service.request({ source: { type: 'operation', requestKind: 'full_compaction' } });
+
+    expect(toolResultText(inputs)).toBe(AGED_RESULT);
   });
 });
