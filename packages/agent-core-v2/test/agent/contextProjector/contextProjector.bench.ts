@@ -164,7 +164,7 @@ function makeMixedHistory(turns: number): ContextMessage[] {
 }
 
 function createProjector(_disposables: DisposableStore): AgentLoopProjector {
-  return new AgentLoopProjector(() => {});
+  return new AgentLoopProjector(() => {}, () => {});
 }
 
 const disposables = new DisposableStore();
