@@ -652,7 +652,6 @@ export * from '#/agent/contextProjector/mediaProjection';
 import '#/agent/contextProjector/flag';
 export * from '#/agent/tokenCounting/tokenCounting';
 export * from '#/agent/tokenCounting/tokenCountingOps';
-export * from '#/agent/contextSize/tokenCalibration';
 export * from '#/session/tokenCounting/sessionTokenCounting';
 export * from '#/session/tokenCounting/tokenCountingAgentModel';
 export * from '#/session/tokenCounting/sessionTokenCountingService';

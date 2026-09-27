@@ -15,11 +15,6 @@ import {
 import { AgentContextProjectorService } from '#/agent/contextProjector/contextProjectorService';
 import { AgentLLMRequesterService, KIMI_CODE_INFINITE_RETRY_ENV } from '#/agent/llmRequester/llmRequesterService';
 import { IAgentLLMRequesterService } from '#/agent/llmRequester/llmRequester';
-import type { TokenCountingRequest } from '#/agent/tokenCounting/tokenCounting';
-import {
-  estimateTokens,
-  estimateTokensForMessages,
-} from '#/llm-adapter/contract/tokens';
 import { createMachineRequester } from '#/agent/loop/machine/requester';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { IFlagService } from '#/app/flag/flag';
@@ -250,25 +245,16 @@ function createService(
       systemPrompt: 'system',
     }),
   };
-  const measuredCalls: {
-    readonly messages: number;
-    readonly usage: TokenUsage;
-    readonly estimated?: number;
-  }[] = [];
+  const measuredCalls: { readonly messages: number; readonly usage: TokenUsage }[] = [];
   const tokenCounting = {
     get: () => ({ size: 0, measured: 0, estimated: 0 }),
-    requestSize: (request: TokenCountingRequest) =>
-      estimateTokens(request.systemPrompt) +
-      request.tools.length +
-      estimateTokensForMessages(request.messages),
     measured: (
       _agent: AgentContext,
       input: readonly Message[],
       _output: readonly Message[],
       usage: TokenUsage,
-      estimated?: number,
     ) => {
-      measuredCalls.push({ messages: input.length, usage, estimated });
+      measuredCalls.push({ messages: input.length, usage });
     },
   };
   const usage = { record: () => Promise.resolve(), status: () => ({}) };
@@ -377,7 +363,6 @@ describe('AgentLLMRequesterService measured anchors', () => {
 
     expect(measuredCalls).toHaveLength(1);
     expect(measuredCalls[0]?.usage.inputOther).toBe(40);
-    expect(measuredCalls[0]?.estimated).toBeGreaterThan(0);
   });
 });
 
