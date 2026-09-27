@@ -581,17 +581,7 @@ export class AgentLoopRequester implements LoopRequester {
         request.source,
       );
       if (usage !== undefined) {
-        this.tokenCounting.measured(
-          this.scopeContext.agentContext,
-          request.messages,
-          [message],
-          usage,
-          this.tokenCounting.requestSize({
-            systemPrompt: input.systemPrompt,
-            tools: providerVisibleTools(input.tools),
-            messages: input.messages,
-          }),
-        );
+        this.tokenCounting.measured(this.scopeContext.agentContext, request.messages, [message], usage);
       }
       this.logResponse(request.logFields, usage ?? emptyUsage(), timing);
 

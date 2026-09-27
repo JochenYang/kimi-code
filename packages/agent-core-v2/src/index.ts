@@ -657,7 +657,6 @@ export * from '#/agent/loop/contentProjection';
 import '#/agent/loop/flag';
 export * from '#/agent/tokenCounting/tokenCounting';
 export * from '#/agent/tokenCounting/tokenCountingOps';
-export * from '#/agent/contextSize/tokenCalibration';
 export * from '#/session/tokenCounting/sessionTokenCounting';
 export * from '#/session/tokenCounting/tokenCountingAgentModel';
 export * from '#/session/tokenCounting/sessionTokenCountingService';
