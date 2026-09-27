@@ -116,7 +116,6 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
     input: readonly Message[],
     _output: readonly Message[],
     usage: TokenUsage,
-    estimatedInputTokens?: number,
   ): Promise<void> {
     const context = this.context();
     const tokens = tokenUsageTotal(usage);
@@ -125,13 +124,7 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
       new TokenCountingMeasured({
         agentId: this.agent.agentId,
         length: context.length,
-<<<<<<< HEAD
         tokens,
-=======
-        tokens: tokenUsageTotal(usage),
-        estimated: estimatedInputTokens,
-        measuredInput: inputTotal(usage),
->>>>>>> 8eec38a2 (feat(agent-core-v2): wire calibration and context projection)
       }),
     );
   }
