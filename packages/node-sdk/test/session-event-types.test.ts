@@ -40,6 +40,9 @@ describe('Event public types', () => {
     expectTypeOf<EventByType<'turn.step.completed'>['llmClientConsumeMs']>().toEqualTypeOf<
       number | undefined
     >();
+    expectTypeOf<EventByType<'turn.step.completed'>['llmClientBlockedMs']>().toEqualTypeOf<
+      number | undefined
+    >();
   });
 
   it('narrows subagent lifecycle events by type', () => {
@@ -70,11 +73,15 @@ describe('Event public types', () => {
         case 'session.meta.updated':
         case 'event.session.created':
         case 'event.session.status_changed':
+        case 'event.session.work_changed':
         case 'event.workspace.created':
         case 'event.workspace.updated':
         case 'event.workspace.deleted':
         case 'event.config.changed':
+        case 'event.config.warning':
         case 'event.model_catalog.changed':
+        case 'event.plugin.changed':
+        case 'event.capability.changed':
         case 'goal.updated':
         case 'skill.activated':
         case 'plugin_command.activated':
@@ -94,6 +101,7 @@ describe('Event public types', () => {
         case 'tool.progress':
         case 'shell.output':
         case 'shell.started':
+        case 'shell.completed':
         case 'tool.result':
         case 'tool.list.updated':
         case 'mcp.server.status':
@@ -102,14 +110,20 @@ describe('Event public types', () => {
         case 'subagent.suspended':
         case 'subagent.completed':
         case 'subagent.failed':
+        case 'subagent.cancelled':
         case 'compaction.started':
         case 'compaction.blocked':
         case 'compaction.cancelled':
         case 'compaction.completed':
+        case 'task.started':
+        case 'task.terminated':
         case 'background.task.started':
         case 'background.task.terminated':
         case 'cron.fired':
         case 'prompt.submitted':
+        case 'prompt.completed':
+        case 'prompt.aborted':
+        case 'prompt.steered':
           return;
         default:
           assertNever(event);

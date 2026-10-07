@@ -45,8 +45,9 @@ function token(accessToken: string): TokenInfo {
 }
 
 const TEST_IDENTITY = {
-  userAgentProduct: 'kimi-code-cli',
+  productName: 'kimi-code-cli',
   version: '0.0.0-test',
+  platform: 'kimi_code_cli',
 } as const;
 
 afterEach(() => {
@@ -85,6 +86,9 @@ describe('resolveKimiTokenStorageName', () => {
       }),
     ).toBe('kimi-code');
     expect(resolveKimiTokenStorageName({ oauthKey: 'kimi-code' })).toBe('kimi-code');
+    expect(
+      resolveKimiTokenStorageName({ oauthKey: 'oauth/kimi-code-env-0123456789abcdef' }),
+    ).toBe('kimi-code-env-0123456789abcdef');
   });
 
   it('accepts non-managed providers with a valid key and rejects unsafe token keys', () => {
@@ -565,6 +569,157 @@ describe('KimiOAuthToolkit', () => {
     });
     expect(onDeviceCode).toHaveBeenCalledTimes(1);
     expect((await storage.load(storageName))?.accessToken).toBe('fresh-access');
+  });
+
+  it('propagates the managed quota response', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.tokens.set('kimi-code', token('access-1'));
+    const fetchImpl = vi.fn(async (_input: unknown, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          goods_version: 1,
+          usages: {
+            limit_5h: { used_ratio: 0.5, reset_time: '2026-09-11T18:00:00Z' },
+            limit_7d: { used_ratio: 0.1, reset_time: '2026-09-17T00:00:00Z' },
+          },
+          boosterWallet: {
+            balance: {
+              type: 'BOOSTER',
+              amount: '20000000000',
+              amountLeft: '10000000000',
+            },
+            monthlyChargeLimitEnabled: true,
+            monthlyChargeLimit: { currency: 'USD', priceInCents: '20000' },
+            monthlyUsed: { currency: 'USD', priceInCents: '5000' },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    await expect(toolkit.getManagedUsage()).resolves.toMatchObject({
+      kind: 'ok',
+      quota: {
+        usages: {
+          limit5h: { usedRatio: 0.5, resetAt: '2026-09-11T18:00:00Z' },
+          limit7d: { usedRatio: 0.1, resetAt: '2026-09-17T00:00:00Z' },
+        },
+        extraUsage: {
+          balanceCents: 10000,
+          totalCents: 20000,
+          monthlyChargeLimitEnabled: true,
+          monthlyChargeLimitCents: 20000,
+          monthlyUsedCents: 5000,
+          currency: 'USD',
+        },
+      },
+    });
+  });
+
+  it('returns null extraUsage when the payload has no boosterWallet', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.tokens.set('kimi-code', token('access-1'));
+    const fetchImpl = vi.fn(async (_input: unknown, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          goods_version: 2,
+          usages: {
+            limit_month_total: { used_ratio: 0.4, reset_time: '2026-10-01T00:00:00Z' },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    await expect(toolkit.getManagedUsage()).resolves.toMatchObject({
+      kind: 'ok',
+      quota: {
+        usages: {
+          monthTotal: { usedRatio: 0.4, resetAt: '2026-10-01T00:00:00Z' },
+        },
+        extraUsage: null,
+      },
+    });
+  });
+
+  it('propagates the managed profile response', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.tokens.set('kimi-code', token('access-1'));
+    const fetchImpl = vi.fn(async (_input: unknown, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          user_id: 'u_123',
+          global_id: 'u_123',
+          goods_version: 2,
+          nickname: 'moonwalker',
+          avatar: 'https://example.com/avatar.png',
+          phone: { country_code: '86', number: '176****0000' },
+          status: 'USER_STATUS_NORMAL',
+          region: 'REGION_CN',
+          created_time: '2026-06-11T13:26:47.561184Z',
+          last_login_time: '2026-07-16T03:12:03.033412Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    await expect(toolkit.getManagedUserInfo()).resolves.toMatchObject({
+      kind: 'ok',
+      userInfo: {
+        userId: 'u_123',
+        globalId: 'u_123',
+        goodsVersion: 2,
+        nickname: 'moonwalker',
+        avatar: 'https://example.com/avatar.png',
+        phone: { countryCode: '86', number: '176****0000' },
+        status: 'USER_STATUS_NORMAL',
+        region: 'REGION_CN',
+        createdTime: '2026-06-11T13:26:47.561184Z',
+        lastLoginTime: '2026-07-16T03:12:03.033412Z',
+      },
+    });
+  });
+
+  it('normalizes managed profile fetch errors into the error result', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.tokens.set('kimi-code', token('access-1'));
+    const fetchImpl = vi.fn(
+      async () => new Response('', { status: 401 }),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    await expect(toolkit.getManagedUserInfo()).resolves.toEqual({
+      kind: 'error',
+      status: 401,
+      message: 'Authorization failed. Please check your API key (try /login).',
+    });
   });
 
   it('removes managed config on logout when an adapter supports cleanup', async () => {

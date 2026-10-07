@@ -5,6 +5,8 @@
  * callers react appropriately:
  *  - `OAuthUnauthorizedError`: 401/403 from token endpoint → refresh_token
  *    or credentials are bad; drive user through `/login` again.
+ *  - `OAuthAccessDeniedError`: user denied the authorization request on the
+ *    consent page (`access_denied`); surface as a user-initiated cancel.
  *  - `OAuthConnectionError`: transport-level OAuth request failure; callers
  *    may retry the operation.
  *  - `DeviceCodeExpiredError`: device_code TTL ran out before user approved;
@@ -16,8 +18,8 @@
  */
 
 export class OAuthError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'OAuthError';
   }
 }
@@ -29,9 +31,16 @@ export class OAuthUnauthorizedError extends OAuthError {
   }
 }
 
-export class OAuthConnectionError extends OAuthError {
-  constructor(message: string) {
+export class OAuthAccessDeniedError extends OAuthError {
+  constructor(message = 'Authorization denied.') {
     super(message);
+    this.name = 'OAuthAccessDeniedError';
+  }
+}
+
+export class OAuthConnectionError extends OAuthError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'OAuthConnectionError';
   }
 }

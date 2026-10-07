@@ -40,9 +40,18 @@ export interface TabbedModelSelectorOptions {
   readonly currentValue: string;
   readonly selectedValue?: string;
   readonly currentThinkingEffort: string;
+  /** Forwarded to each inner selector; overrides the default ' Select a model'
+   * title line. */
+  readonly title?: string;
   /** When set, the tab for this provider id is initially active instead of the
    * tab derived from `currentValue`. */
   readonly initialTabId?: string;
+  /** When set, warning-colored lines are rendered directly below the key-hint
+   * line, wrapping as needed (e.g. the mid-conversation switch cost notice). */
+  readonly warning?: string;
+  /** Forwarded to each inner selector; set to false to hide the Thinking
+   * footer and disable ←/→ effort switching. */
+  readonly thinkingControl?: boolean;
   readonly onSelect: (selection: ModelSelection) => void;
   /** Forwarded to each inner selector; when set, Alt+S applies the choice to
    * the current session only without persisting it as the default. */
@@ -100,24 +109,20 @@ export class TabbedModelSelectorComponent extends Container implements Focusable
     if (this.tabs.length <= 1) {
       return inner.map((line) => truncateToWidth(line, width));
     }
-    // Layout: divider, title, hint, blank, tab strip, blank, then the model
-    // list. The inner selector's blank line (inner[3]) separates the hint from
-    // the tab strip; an extra blank separates the tabs from their list.
+    // Layout: divider, title, hint, optional warning, blank, tab strip, blank,
+    // then the model list. The header ends at its first blank line — keep that
+    // blank above the strip, and separate the tabs from the list with another
+    // blank.
     const stripLine = renderTabStrip({
       labels: this.tabs.map((tab) => tab.label),
       activeIndex: this.activeIndex,
       width,
       colors: currentTheme.palette,
     });
-    const out: string[] = [
-      inner[0] ?? '',
-      inner[1] ?? '',
-      inner[2] ?? '',
-      inner[3] ?? '',
-      stripLine,
-      '',
-    ];
-    for (let i = 4; i < inner.length; i++) out.push(inner[i]!);
+    const headerEnd = inner.findIndex((line) => line === '');
+    const splitAt = headerEnd === -1 ? 3 : headerEnd;
+    const out: string[] = [...inner.slice(0, splitAt + 1), stripLine, ''];
+    for (let i = splitAt + 1; i < inner.length; i++) out.push(inner[i]!);
     return out.map((line) => truncateToWidth(line, width));
   }
 
@@ -180,8 +185,11 @@ function makeSelector(
     currentValue: opts.currentValue,
     ...(selectedValue !== undefined ? { selectedValue } : {}),
     currentThinkingEffort: opts.currentThinkingEffort,
+    title: opts.title,
     searchable: true,
     providerSwitchHint: true,
+    warning: opts.warning,
+    thinkingControl: opts.thinkingControl,
     onSelect: opts.onSelect,
     onSessionOnlySelect: opts.onSessionOnlySelect,
     onCancel: opts.onCancel,

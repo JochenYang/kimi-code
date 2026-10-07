@@ -24,7 +24,7 @@ src/runtime 下的 event loop 是怎么工作的？事件从哪里产生、又�
 这个项目里「权限审批」是怎么实现的？涉及哪些文件，关键类型是什么？
 ```
 
-大型调研可以让主 Agent 派发**子 Agent** 并行处理子任务，详见 [Agent 与子 Agent](../customization/agents.md)。
+大型调研可以让 main agent 派发**subagent** 并行处理子任务，详见 [Agent 与 subagent](../customization/agents.md)。
 
 ## 实现新功能
 
@@ -81,7 +81,7 @@ src/parser/markdown.ts 目前几乎没有测试。请补一组单元测试，覆
 把 src/handlers 下重复的「读 body → 校验 → 写日志 → 返回」逻辑抽成一个中间件。改完跑一遍测试，保证现有行为不变。
 ```
 
-多文件重构建议先用 Plan 模式确认方案，可用 `/fork` 派生一个试验分支，不满意直接切回原会话。
+多文件重构建议先用 Plan 模式确认方案，也可以用 `/fork` 派生一个试验分支，再从 `/sessions` 切换过去尝试；fork 本身不影响原会话，不满意切回来即可。
 
 ## 一次性脚本与自动化任务
 
@@ -121,7 +121,7 @@ src/parser/markdown.ts 目前几乎没有测试。请补一组单元测试，覆
 大约 10 分钟之后再回来，确认一下构建是否结束。
 ```
 
-定时计划绑定在会话内：关掉终端没关系，对同一个会话执行 `kimi resume` 时会重新加载并继续触发；但它们不会带入全新的会话。周期任务在 7 天后会自动过期——Agent 会在最后一次触发时收到 `stale` 提示，可根据你之前的指示决定结束还是续期。
+定时计划绑定在会话内：关掉终端没关系，用 `kimi --session` 恢复同一个会话时会重新加载并继续触发；但它们不会带入全新的会话。周期任务在 7 天后会自动过期——Agent 会在最后一次触发时收到 `stale` 提示，可根据你之前的指示决定结束还是续期。
 
 想查看当前有哪些挂起的任务，直接问 Agent 即可（它会调用只读的 `CronList` 工具）；要取消某个任务，让 Agent 删除它或引用对应的 8 位 id。完整工具说明见[定时任务](../reference/tools.md#定时任务)；整体关停开关是 `KIMI_DISABLE_CRON=1`。
 
@@ -143,6 +143,6 @@ src/api 下所有公开函数里，凡是没有 docstring 的都补上文档注�
 
 ## 下一步
 
-- [Agent 与子 Agent](../customization/agents.md) — 如何让 Agent 派发子任务并行处理
+- [Agent 与 subagent](../customization/agents.md) — 如何让 Agent 派发子任务并行处理
 - [Hooks](../customization/hooks.md) — 在任务完成等节点触发本地脚本
 - [内置工具](../reference/tools.md) — Agent 可调用的全部工具参考

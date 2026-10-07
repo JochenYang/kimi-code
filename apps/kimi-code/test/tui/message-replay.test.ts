@@ -17,7 +17,16 @@ import { KimiTUI, type KimiTUIStartupInput, type TUIState } from '#/tui/kimi-tui
 import type { SessionEventHandler } from '#/tui/controllers/session-event-handler';
 import type { StreamingUIController } from '#/tui/controllers/streaming-ui';
 import { AgentGroupComponent } from '#/tui/components/messages/agent-group';
+import { AssistantMessageComponent } from '#/tui/components/messages/assistant-message';
+import { StepSummaryComponent } from '#/tui/components/messages/step-summary';
+import {
+  TRANSCRIPT_KEEP_RECENT_ASSISTANT_COMPLETED,
+  TRANSCRIPT_KEEP_RECENT_STEPS,
+} from '#/tui/utils/transcript-window';
+import { ToolCallComponent } from '#/tui/components/messages/tool-call';
 import { ReadGroupComponent } from '#/tui/components/messages/read-group';
+import { replayBackgroundProjection } from '#/tui/utils/message-replay';
+import type { TaskNotificationOrigin } from '#/tui/utils/message-replay';
 
 vi.mock('#/utils/open-url', () => ({ openUrl: vi.fn() }));
 
@@ -49,6 +58,8 @@ function makeStartupInput(): KimiTUIStartupInput {
       outputFormat: undefined,
       prompt: undefined,
       skillsDirs: [],
+      agent: undefined,
+      agentFiles: [],
     },
     tuiConfig: {
       theme: 'dark',
@@ -56,6 +67,7 @@ function makeStartupInput(): KimiTUIStartupInput {
       editorCommand: null,
       notifications: { enabled: true, condition: 'unfocused' },
       upgrade: { autoInstall: true },
+      statusLine: { items: null, command: null },
     },
     version: '0.0.0-test',
     workDir: '/tmp/proj-a',
@@ -68,7 +80,7 @@ function message(
   extra: {
     readonly toolCalls?: readonly ToolCall[];
     readonly toolCallId?: string;
-    readonly origin?: PromptOrigin;
+    readonly origin?: PromptOrigin | TaskNotificationOrigin;
     readonly isError?: boolean;
   } = {},
 ): AgentReplayRecord {
@@ -80,7 +92,7 @@ function message(
       content: [...content],
       toolCalls: [...(extra.toolCalls ?? [])],
       toolCallId: extra.toolCallId,
-      origin: extra.origin,
+      origin: extra.origin as PromptOrigin | undefined,
       isError: extra.isError,
     },
   };
@@ -308,6 +320,57 @@ describe('KimiTUI resume message replay', () => {
     expect(transcript).not.toContain('Goal complete');
   });
 
+  it('renders an uploaded image daemon ref as a bare placeholder on replay', async () => {
+    // An uploaded image persists as a self-contained `kimi-file://` part; on
+    // replay it renders as a bare `[image]` placeholder — neither the
+    // materialization path nor the internal url may surface.
+    const driver = await replayIntoDriver([
+      message(
+        'user',
+        [
+          { type: 'text', text: 'what is this? ' },
+          {
+            type: 'image_url',
+            imageUrl: { url: 'kimi-file://f_1?path=%2FUsers%2Falice%2Fmedia%2Ff_1.png' },
+          },
+        ],
+        { origin: { kind: 'user' } },
+      ),
+    ]);
+
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).toContain('what is this?');
+    expect(transcript).toContain('[image]');
+    expect(transcript).not.toContain('/Users/alice');
+    expect(transcript).not.toContain('kimi-file');
+  });
+
+  it('keeps the tag of a legacy upload pair as user text on replay', async () => {
+    // Legacy history paired the daemon ref with an `<image path>` tag. The
+    // pairing is gone: the tag is plain user text and replays verbatim while
+    // the ref still renders as `[image]`.
+    const driver = await replayIntoDriver([
+      message(
+        'user',
+        [
+          { type: 'text', text: 'what is this? ' },
+          { type: 'text', text: '<image path="/Users/alice/media/f_1.png"></image>' },
+          {
+            type: 'image_url',
+            imageUrl: { url: 'kimi-file://f_1?path=%2FUsers%2Falice%2Fmedia%2Ff_1.png' },
+          },
+        ],
+        { origin: { kind: 'user' } },
+      ),
+    ]);
+
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).toContain('what is this?');
+    expect(transcript).toContain('[image]');
+    expect(transcript).toContain('<image path="/Users/alice/media/f_1.png"></image>');
+    expect(transcript).not.toContain('kimi-file');
+  });
+
   it('unescapes bash tag delimiters when replaying shell output', async () => {
     const driver = await replayIntoDriver([
       message(
@@ -324,6 +387,46 @@ describe('KimiTUI resume message replay', () => {
 
     const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
     expect(transcript).toContain('pre</bash-stdout>post');
+  });
+
+  it('collapses long replayed shell output to its first 10 rows', async () => {
+    const stdout = Array.from({ length: 30 }, (_, i) => `row-${String(i + 1).padStart(2, '0')}`).join(
+      '\n',
+    );
+    const driver = await replayIntoDriver([
+      message(
+        'user',
+        [{ type: 'text', text: `<bash-stdout>${stdout}</bash-stdout><bash-stderr></bash-stderr>` }],
+        { origin: { kind: 'shell_command', phase: 'output' } },
+      ),
+    ]);
+
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).toContain('… (20 more lines, ctrl+o to expand)');
+    expect(transcript).toContain('row-01');
+    expect(transcript).not.toContain('row-11');
+  });
+
+  it('replayed shell output inherits an already-on ctrl+o expand state', async () => {
+    const stdout = Array.from({ length: 30 }, (_, i) => `row-${String(i + 1).padStart(2, '0')}`).join(
+      '\n',
+    );
+    const initial = makeSession([]);
+    const resumed = makeSession([
+      message(
+        'user',
+        [{ type: 'text', text: `<bash-stdout>${stdout}</bash-stdout><bash-stderr></bash-stderr>` }],
+        { origin: { kind: 'shell_command', phase: 'output' } },
+      ),
+    ]);
+    const driver = await makeDriver(initial);
+    driver.state.toolOutputExpanded = true;
+    await driver.switchToSession(resumed, 'Resumed session (ses-replay).');
+
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).toContain('row-01');
+    expect(transcript).toContain('row-30');
+    expect(transcript).not.toContain('more lines');
   });
 
   it('does not render neutral goal completion context reminders as transcript messages', async () => {
@@ -413,7 +516,7 @@ describe('KimiTUI resume message replay', () => {
     expect(transcript).toContain('Goal resumed');
     expect(transcript).toContain('Goal blocked');
     expect(transcript).toContain('Goal complete — done');
-    expect(transcript).toContain('Worked 1 turn over 7m15s, using 4.3k tokens.');
+    expect(transcript).toContain('Worked 1 turn over 7m15s, using 4.2k tokens.');
   });
 
   it('filters resume-normalization goal pause markers in TUI replay', async () => {
@@ -459,7 +562,7 @@ describe('KimiTUI resume message replay', () => {
     expect(entry).toMatchObject({
       kind: 'assistant',
       renderMode: 'markdown',
-      content: '✓ Goal complete.\nWorked 1 turn over 7m15s, using 4.3M tokens.',
+      content: '✓ Goal complete.\nWorked 1 turn over 7m15s, using 4.1M tokens.',
     });
   });
 
@@ -499,6 +602,38 @@ describe('KimiTUI resume message replay', () => {
     const content = driver.state.transcriptEntries.map((item) => item.content).join('\n');
     expect(content).not.toContain('Goal blocked.');
     expect(content).not.toContain('Write a concise final message for the user');
+  });
+
+  it('does not replay system-trigger prompts such as goal continuation as user messages', async () => {
+    const driver = await replayIntoDriver([
+      message(
+        'user',
+        [
+          {
+            type: 'text',
+            text: 'Continue working toward the active goal. Keep the self-audit brief.',
+          },
+        ],
+        { origin: { kind: 'system_trigger', name: 'goal_continuation' } },
+      ),
+      message(
+        'user',
+        [
+          {
+            type: 'text',
+            text: '<system-reminder>\nThe goal was cancelled.\n</system-reminder>',
+          },
+        ],
+        { origin: { kind: 'system_trigger', name: 'goal_cancelled' } },
+      ),
+      message('assistant', [{ type: 'text', text: 'Working on it.' }]),
+    ]);
+
+    expect(driver.state.transcriptEntries.filter((entry) => entry.kind === 'user')).toEqual([]);
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).not.toContain('Continue working toward the active goal');
+    expect(transcript).not.toContain('The goal was cancelled');
+    expect(transcript).toContain('Working on it.');
   });
 
   it('does not replay the model-blocked lifecycle marker when the follow-up is replayed', async () => {
@@ -864,6 +999,46 @@ describe('KimiTUI resume message replay', () => {
     expect(status?.backgroundAgentStatus?.headline).not.toContain('agent');
   });
 
+  it('renders replayed v2 task notifications (task origin) as bash tasks', async () => {
+    const driver = await replayIntoDriver(
+      [
+        message(
+          'user',
+          [
+            {
+              type: 'text',
+              text: '<notification id="task:bash-done0000:completed" category="task" type="task.completed" source_kind="background_task" source_id="bash-done0000">\nTitle: Background process completed\n</notification>',
+            },
+          ],
+          {
+            origin: {
+              kind: 'task',
+              taskId: 'bash-done0000',
+              status: 'completed',
+              notificationId: 'task:bash-done0000:completed',
+            },
+          },
+        ),
+      ],
+      {
+        background: [backgroundTask('bash-done0000', 'Codex comment poller', 'completed')],
+      },
+    );
+
+    const status = driver.state.transcriptEntries.find(
+      (entry) => entry.backgroundAgentStatus !== undefined,
+    );
+
+    expect(status?.backgroundAgentStatus?.headline).toBe('bash task completed in background');
+    expect(status?.backgroundAgentStatus?.detail).toContain('Codex comment poller');
+    // The raw notification XML must not leak into the visible transcript.
+    expect(
+      driver.state.transcriptEntries.some(
+        (entry) => entry.kind === 'user' && entry.content.includes('<notification'),
+      ),
+    ).toBe(false);
+  });
+
   it('renders only the most recent ten visible user turns', async () => {
     const replay = Array.from({ length: 12 }, (_, index) => [
       message('user', [{ type: 'text', text: `prompt ${index}` }]),
@@ -940,6 +1115,31 @@ describe('KimiTUI resume message replay', () => {
     ).toEqual(['run nightly']);
   });
 
+  it('keeps the previous turn’s final answer visible when a cron turn follows in replay', async () => {
+    const cronFire =
+      '<cron-fire jobId="job-1" cron="*/5 * * * *" recurring="true" coalescedCount="1" stale="false">\n<prompt>\nrun nightly\n</prompt>\n</cron-fire>';
+    const driver = await replayIntoDriver([
+      message('user', [{ type: 'text', text: 'real prompt' }]),
+      message('assistant', [{ type: 'text', text: 'real answer' }]),
+      message('user', [{ type: 'text', text: cronFire }], {
+        origin: {
+          kind: 'cron_job',
+          jobId: 'job-1',
+          cron: '*/5 * * * *',
+          recurring: true,
+          coalescedCount: 1,
+          stale: false,
+        },
+      }),
+      message('assistant', [{ type: 'text', text: 'cron report part one' }]),
+      message('assistant', [{ type: 'text', text: 'cron report final' }]),
+    ]);
+
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(120).join('\n'));
+    expect(transcript).toContain('cron report final');
+    expect(transcript).toContain('real answer');
+  });
+
   it('renders cron_missed origin records during replay without exposing raw XML', async () => {
     const cronMissed =
       '<cron-fire jobId="job-2" missed="true" count="3">\n3 one-shot tasks missed while offline\n</cron-fire>';
@@ -1000,6 +1200,34 @@ describe('KimiTUI resume message replay', () => {
       message('user', [{ type: 'text', text: hookResult }], {
         origin: { kind: 'hook_result', event: 'UserPromptSubmit' },
       }),
+      message('user', [
+        {
+          type: 'text',
+          text: '<hook_result hook_event="UserPromptSubmit">\nmerged hook note\n</hook_result>',
+          meta: { contentType: 'text/xml', source: 'user prompt submit hook' },
+        } as ContentPart,
+        { type: 'text', text: 'merged prompt' },
+      ]),
+      message(
+        'user',
+        [
+          {
+            type: 'text',
+            text: '<hook_result hook_event="UserPromptSubmit">\nskill hook note\n</hook_result>',
+            meta: { contentType: 'text/xml', source: 'user prompt submit hook' },
+          } as ContentPart,
+          { type: 'text', text: 'Review the requested file.' },
+        ],
+        {
+          origin: {
+            kind: 'skill_activation',
+            activationId: 'act-review',
+            skillName: 'review',
+            skillArgs: 'src/app.ts',
+            trigger: 'user-slash',
+          },
+        },
+      ),
     ]);
 
     const transcript = driver.state.transcriptContainer.render(120).join('\n');
@@ -1007,6 +1235,13 @@ describe('KimiTUI resume message replay', () => {
     expect(transcript).toContain('UserPromptSubmit hook');
     expect(transcript).toContain('hook response 1');
     expect(transcript).toContain('hook response 2');
+    expect(transcript).toContain('merged hook note');
+    expect(transcript).toContain('skill hook note');
+    expect(
+      driver.state.transcriptEntries
+        .filter((entry) => entry.kind === 'user')
+        .map((entry) => entry.content),
+    ).toEqual(['prompt', 'merged prompt']);
   });
 
   it('renders replayed compaction records as completed compaction blocks', async () => {
@@ -1121,9 +1356,9 @@ describe('KimiTUI resume message replay', () => {
     const transcript = driver.state.transcriptContainer.render(120).join('\n');
 
     expect(transcript).toContain('Plan mode: ON');
-    expect(transcript).toContain('Permission mode: auto');
-    expect(transcript).toContain('YOLO mode: ON');
-    expect(transcript).toContain('YOLO mode: OFF');
+    expect(transcript).toContain('Permission mode: Never Ask');
+    expect(transcript).toContain('Ask When Needed mode: ON');
+    expect(transcript).toContain('Ask When Needed mode: OFF');
     expect(transcript).toContain('Approved for session: run command');
     expect(transcript).toContain('Plan mode: OFF');
   });
@@ -1185,5 +1420,144 @@ describe('KimiTUI resume message replay', () => {
     expect(transcript).toContain('replay final approved plan');
     expect(transcript).not.toContain('Plan rejected by user.');
     expect(transcript).not.toContain('Plan mode: OFF');
+  });
+
+  it('trims goal sessions to the most recent goal turns and hides continuation prompts', async () => {
+    const replay: AgentReplayRecord[] = [goalReplay(goalSnapshot(), { kind: 'created' })];
+    for (let i = 0; i < 25; i++) {
+      replay.push(
+        message('user', [{ type: 'text', text: 'Continue working toward the active goal.' }], {
+          origin: { kind: 'system_trigger', name: 'goal_continuation' },
+        }),
+        message('assistant', [{ type: 'text', text: `round ${i} summary` }], {
+          toolCalls: [toolCall(`call_${i}`, 'Bash', { command: 'ls' })],
+        }),
+        message('tool', [{ type: 'text', text: 'ok' }], { toolCallId: `call_${i}` }),
+      );
+    }
+
+    const driver = await replayIntoDriver(replay);
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+
+    // Continuation prompts are model-facing and never render as user bubbles.
+    expect(transcript).not.toContain('Continue working toward the active goal.');
+    // Only the most recent REPLAY_TURN_LIMIT goal turns are replayed.
+    expect(transcript).not.toContain('round 0 summary');
+    expect(transcript).not.toContain('round 14 summary');
+    expect(transcript).toContain('round 15 summary');
+    expect(transcript).toContain('round 24 summary');
+    expect(
+      driver.state.transcriptContainer.children.filter(
+        (child) => child instanceof ToolCallComponent,
+      ),
+    ).toHaveLength(10);
+  });
+
+  it('folds oversized goal rounds even though continuation boundaries are hidden', async () => {
+    const replay: AgentReplayRecord[] = [goalReplay(goalSnapshot(), { kind: 'created' })];
+    // Ten continuation rounds — exactly at the replay turn limit, so nothing
+    // is trimmed and only folding can bound the oversized final round.
+    for (let i = 0; i < 9; i++) {
+      replay.push(
+        message('user', [{ type: 'text', text: 'Continue working toward the active goal.' }], {
+          origin: { kind: 'system_trigger', name: 'goal_continuation' },
+        }),
+        message('assistant', [{ type: 'text', text: `round ${i} summary` }], {
+          toolCalls: [toolCall(`call_${i}`, 'Bash', { command: 'ls' })],
+        }),
+        message('tool', [{ type: 'text', text: 'ok' }], { toolCallId: `call_${i}` }),
+      );
+    }
+    // Final round: 40 tool calls and 5 assistant texts in one continuation turn.
+    replay.push(
+      message('user', [{ type: 'text', text: 'Continue working toward the active goal.' }], {
+        origin: { kind: 'system_trigger', name: 'goal_continuation' },
+      }),
+    );
+    for (let t = 0; t < 40; t++) {
+      replay.push(
+        message('assistant', t < 5 ? [{ type: 'text', text: `final text ${t}` }] : [], {
+          toolCalls: [toolCall(`final_${t}`, 'Bash', { command: 'ls' })],
+        }),
+        message('tool', [{ type: 'text', text: 'ok' }], { toolCallId: `final_${t}` }),
+      );
+    }
+
+    const driver = await replayIntoDriver(replay);
+    const children = driver.state.transcriptContainer.children;
+
+    // The oversized round folds to the per-turn caps even with no visible
+    // boundary component mounted for the continuation prompt.
+    const tools = children.filter((child) => child instanceof ToolCallComponent);
+    expect(tools).toHaveLength(9 + TRANSCRIPT_KEEP_RECENT_STEPS);
+    const assistants = children.filter((child) => child instanceof AssistantMessageComponent);
+    expect(assistants).toHaveLength(9 + TRANSCRIPT_KEEP_RECENT_ASSISTANT_COMPLETED);
+
+    const summaries = children.filter((child) => child instanceof StepSummaryComponent);
+    expect(summaries).toHaveLength(1);
+    const summaryText = stripAnsi(summaries[0]!.render(120).join('\n'));
+    expect(summaryText).toContain(`call ${40 - TRANSCRIPT_KEEP_RECENT_STEPS} tools`);
+    expect(summaryText).toContain(`${5 - TRANSCRIPT_KEEP_RECENT_ASSISTANT_COMPLETED} messages`);
+
+    // The folded content is gone from view; the latest work stays.
+    const transcript = stripAnsi(driver.state.transcriptContainer.render(140).join('\n'));
+    expect(transcript).not.toContain('final text 0');
+    expect(transcript).toContain('final text 4');
+  });
+});
+
+describe('replayBackgroundProjection', () => {
+  function agentTask(overrides: Record<string, unknown> = {}): BackgroundTaskInfo {
+    return {
+      taskId: 'agent-task1',
+      kind: 'agent',
+      agentId: 'agent-1',
+      description: 'background job',
+      status: 'running',
+      startedAt: 1,
+      endedAt: null,
+      ...overrides,
+    } as BackgroundTaskInfo;
+  }
+
+  it('threads the persisted model (catalog-mapped) and concrete effort into the metadata', () => {
+    const projection = replayBackgroundProjection(
+      [agentTask({ model: 'k2-cheap', thinkingEffort: 'low' })],
+      {
+        'k2-cheap': {
+          provider: 'managed:kimi-code',
+          model: 'kimi-k2-cheap',
+          displayName: 'Kimi K2 Cheap',
+        },
+      } as never,
+    );
+    expect(projection.backgroundAgentMetadata.get('agent-1')).toMatchObject({
+      model: 'Kimi K2 Cheap',
+      effort: 'low',
+    });
+  });
+
+  it('falls back to the raw alias and drops boolean effort states', () => {
+    const projection = replayBackgroundProjection([
+      agentTask({ model: 'k2-cheap', thinkingEffort: 'on' }),
+      agentTask({
+        taskId: 'agent-task2',
+        agentId: 'agent-2',
+        model: 'k2-cheap',
+        thinkingEffort: 'off',
+      }),
+    ]);
+    expect(projection.backgroundAgentMetadata.get('agent-1')).toMatchObject({
+      model: 'k2-cheap',
+      effort: undefined,
+    });
+    expect(projection.backgroundAgentMetadata.get('agent-2')?.effort).toBeUndefined();
+  });
+
+  it('omits model and effort for records that predate the fields', () => {
+    const projection = replayBackgroundProjection([agentTask()]);
+    const meta = projection.backgroundAgentMetadata.get('agent-1');
+    expect(meta?.model).toBeUndefined();
+    expect(meta?.effort).toBeUndefined();
   });
 });

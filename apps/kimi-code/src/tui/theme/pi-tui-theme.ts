@@ -13,6 +13,7 @@ import chalk from 'chalk';
 import { highlight, supportsLanguage } from 'cli-highlight';
 
 import { currentTheme } from './theme';
+import { codeHighlightTheme } from './highlight-theme';
 
 // pi-tui's renderer emits literal "### " / "#### " / ... markers for h3-h6
 // headings (h1/h2 are rendered without the `#` prefix). The prefix arrives
@@ -22,11 +23,16 @@ import { currentTheme } from './theme';
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte that opens ANSI SGR sequences.
 const HEADING_HASH_PREFIX = /^((?:\u001B\[[0-9;]*m)*)#{1,6}[ \t]+/;
 
-export function createMarkdownTheme(options?: { transient?: boolean }): MarkdownTheme {
+export interface KimiMarkdownTheme extends MarkdownTheme {
+  transient?: boolean;
+}
+
+export function createMarkdownTheme(options?: { transient?: boolean }): KimiMarkdownTheme {
   const transient = options?.transient === true;
   const stripHash = (text: string): string => text.replace(HEADING_HASH_PREFIX, '$1');
 
   return {
+    transient,
     heading: (text) => chalk.bold.hex(currentTheme.color('text'))(stripHash(text)),
     link: (text) => chalk.hex(currentTheme.color('primary'))(text),
     linkUrl: (text) => chalk.hex(currentTheme.color('textMuted'))(text),
@@ -51,7 +57,7 @@ export function createMarkdownTheme(options?: { transient?: boolean }): Markdown
       const language =
         normalizedLang !== undefined && supportsLanguage(normalizedLang) ? normalizedLang : 'text';
       try {
-        const highlighted = highlight(code, { language, ignoreIllegals: true });
+        const highlighted = highlight(code, { language, ignoreIllegals: true, theme: codeHighlightTheme });
         return highlighted.split('\n');
       } catch {
         return code.split('\n');

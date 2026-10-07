@@ -7,7 +7,6 @@
  * production state.
  */
 
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { arch, hostname, release, type } from 'node:os';
@@ -18,8 +17,15 @@ import type { DeviceHeaders } from './types';
 export const KIMI_CODE_PLATFORM = 'kimi_code_cli';
 
 export interface KimiHostIdentity {
-  readonly userAgentProduct: string;
+  readonly productName: string;
   readonly version: string;
+  /**
+   * `X-Msh-Platform` value reported to the OAuth host and managed endpoints
+   * (e.g. `kimi_code_cli`, `kimi_code_desktop`). Every host must state its own
+   * explicitly — `KIMI_CODE_PLATFORM` is the CLI's value, not a default to
+   * inherit silently.
+   */
+  readonly platform: string;
   readonly userAgentSuffix?: string | undefined;
 }
 
@@ -70,9 +76,12 @@ export function createKimiDeviceId(
 export function createKimiDeviceHeaders(options: {
   readonly homeDir: string;
   readonly version: string;
+  /** Required and validated like the version: non-empty ASCII, no fallback —
+      a blank or fabricated platform would silently misreport the host. */
+  readonly platform: string;
 }): DeviceHeaders {
   return {
-    'X-Msh-Platform': KIMI_CODE_PLATFORM,
+    'X-Msh-Platform': requiredAsciiHeader(options.platform, 'Kimi identity platform'),
     'X-Msh-Version': requiredAsciiHeader(options.version, 'Kimi identity version'),
     'X-Msh-Device-Name': asciiHeader(hostname()),
     'X-Msh-Device-Model': asciiHeader(deviceModel()),
@@ -82,11 +91,11 @@ export function createKimiDeviceHeaders(options: {
 }
 
 export function createKimiUserAgent(options: {
-  readonly userAgentProduct: string;
+  readonly productName: string;
   readonly version: string;
   readonly userAgentSuffix?: string | undefined;
 }): string {
-  const product = requiredAsciiHeader(options.userAgentProduct, 'Kimi identity product');
+  const product = requiredAsciiHeader(options.productName, 'Kimi identity product');
   const version = requiredAsciiHeader(options.version, 'Kimi identity version');
   const suffix =
     options.userAgentSuffix === undefined ? undefined : asciiHeader(options.userAgentSuffix, '');
@@ -95,12 +104,33 @@ export function createKimiUserAgent(options: {
     : `${product}/${version} (${suffix})`;
 }
 
+/**
+ * Swap the product token of a User-Agent produced by
+ * {@link createKimiUserAgent}, keeping the version and optional suffix intact
+ * (`kimi-code-cli/1.2.3 (web)` → `acme/1.2.3 (web)`).
+ *
+ * Lives next to the builder on purpose: the format knowledge — product token,
+ * `/`, version, parenthesized suffix — must exist in exactly one place, so a
+ * change to the builder cannot silently desynchronize the rewriter. Callers
+ * pass an already-normalized ASCII token; a blank or non-ASCII product still
+ * throws rather than emitting an invalid header.
+ *
+ * A value that does not carry a `/` is treated as a bare product token and
+ * replaced wholesale.
+ */
+export function replaceUserAgentProduct(userAgent: string, product: string): string {
+  const cleaned = requiredAsciiHeader(product, 'Kimi identity product');
+  const separator = userAgent.indexOf('/');
+  return separator < 0 ? cleaned : `${cleaned}${userAgent.slice(separator)}`;
+}
+
 export function createKimiDefaultHeaders(options: KimiIdentityOptions): Record<string, string> {
   return {
     'User-Agent': createKimiUserAgent(options),
     ...createKimiDeviceHeaders({
       homeDir: options.homeDir,
       version: options.version,
+      platform: options.platform,
     }),
   };
 }
@@ -141,7 +171,7 @@ export function assertKimiHostIdentity(identity: KimiHostIdentity | undefined): 
   if (identity === undefined) {
     throw new Error('Kimi host identity is required. Pass the host product name and version.');
   }
-  requiredAsciiHeader(identity.userAgentProduct, 'Kimi identity product');
+  requiredAsciiHeader(identity.productName, 'Kimi identity product');
   requiredAsciiHeader(identity.version, 'Kimi identity version');
   return identity;
 }
@@ -155,13 +185,17 @@ function deviceModel(): string {
   return `${os} ${version} ${osArch}`.trim();
 }
 
+/**
+ * The file `sw_vers -productVersion` reads. Parsing it directly avoids spawning
+ * a child process on every startup.
+ */
+const MACOS_SYSTEM_VERSION_PLIST = '/System/Library/CoreServices/SystemVersion.plist';
+
 function macOsProductVersion(): string | undefined {
   try {
-    const version = execFileSync('/usr/bin/sw_vers', ['-productVersion'], {
-      encoding: 'utf-8',
-      timeout: 1000,
-    }).trim();
-    return version.length > 0 ? version : undefined;
+    const plist = readFileSync(MACOS_SYSTEM_VERSION_PLIST, 'utf-8');
+    const version = /<key>ProductVersion<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1]?.trim();
+    return version !== undefined && version.length > 0 ? version : undefined;
   } catch {
     return undefined;
   }

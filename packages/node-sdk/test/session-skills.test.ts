@@ -1,8 +1,7 @@
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type * as KosongModule from '@moonshot-ai/kosong';
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import {
   createKimiHarness,
@@ -13,60 +12,35 @@ import {
 } from '#/index';
 import type { SDKRpcClientBase } from '#/rpc';
 
-import { normalizeWorkDir } from '../../agent-core/src/session/store';
 import {
   makeTempDir,
   removeTempDirs,
-  waitForAgentWireEvent,
   waitForSDKEvent,
 } from './session-runtime-helpers';
 import { TEST_IDENTITY } from './test-identity';
-
-const fakeProviderState = vi.hoisted(() => ({
-  histories: [] as unknown[],
-  responseText: 'skill response',
-}));
-
-vi.mock('@moonshot-ai/kosong', async (importOriginal) => {
-  const actual = await importOriginal<typeof KosongModule>();
-  return {
-    ...actual,
-    createProvider: () => ({
-      name: 'fake',
-      modelName: 'fake-model',
-      thinkingEffort: null,
-      async generate(_systemPrompt: string, _tools: unknown, history: unknown) {
-        fakeProviderState.histories.push(history);
-        return {
-          id: 'fake-response',
-          usage: {
-            inputOther: 0,
-            output: 1,
-            inputCacheRead: 0,
-            inputCacheCreation: 0,
-          },
-          finishReason: 'completed',
-          rawFinishReason: 'stop',
-          async *[Symbol.asyncIterator]() {
-            yield { type: 'text', text: fakeProviderState.responseText };
-          },
-        };
-      },
-      withThinking() {
-        return this;
-      },
-    }),
-  };
-});
 
 const { Session } = await import('#/index');
 
 const tempDirs: string[] = [];
 
-beforeEach(() => {
-  fakeProviderState.histories.length = 0;
-  fakeProviderState.responseText = 'skill response';
-});
+const CONFIG_ENV_PATTERN =
+  /^(KIMI_MODEL_|KIMI_LOOP_|KIMI_MCP_|KIMI_WEB_|KIMI_IMAGE_|KIMI_CODE_BACKGROUND_|KIMI_CODE_MODEL_CATALOG_)/;
+
+/** Keep ambient env from injecting providers/models into the v2 engine. */
+function scrubConfigEnv(): () => void {
+  const saved: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && CONFIG_ENV_PATTERN.test(key)) {
+      saved[key] = value;
+      delete process.env[key];
+    }
+  }
+  return () => {
+    for (const [key, value] of Object.entries(saved)) {
+      process.env[key] = value;
+    }
+  };
+}
 
 afterEach(async () => {
   await removeTempDirs(tempDirs);
@@ -74,6 +48,55 @@ afterEach(async () => {
 });
 
 describe('Session skills', () => {
+  it('submits multiple skills with a prompt as one grouped turn', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-skills-home-');
+    const workDir = await makeTempDir(tempDirs, 'kimi-sdk-skills-work-');
+    await writeSkill(workDir, 'review', [
+      '---',
+      'name: review',
+      'description: Review code',
+      '---',
+      '',
+      'Review the requested file.',
+    ]);
+    await writeSkill(workDir, 'security', [
+      '---',
+      'name: security',
+      'description: Check security',
+      '---',
+      '',
+      'Check the requested file for security issues.',
+    ]);
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      const session = await harness.createSession({ id: 'ses_sdk_multi_skill', workDir });
+      const events: Event[] = [];
+      const unsubscribe = session.onEvent((event) => {
+        events.push(event);
+      });
+      const ended = waitForSDKEvent(session, (event) => event.type === 'turn.ended');
+
+      await session.promptWithSkills(
+        'Review this change.',
+        [{ name: 'review' }, { name: 'security' }],
+      );
+      await ended;
+      unsubscribe();
+
+      const activations = events.filter(
+        (event): event is Extract<Event, { type: 'skill.activated' }> =>
+          event.type === 'skill.activated',
+      );
+      expect(activations.map((event) => event.skillName)).toEqual(['review', 'security']);
+      expect(events.filter((event) => event.type === 'turn.started')).toHaveLength(1);
+    } finally {
+      await harness.close();
+      restoreEnv();
+    }
+  });
+
   it('lists session skills without exposing content', async () => {
     const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-skills-home-');
     const workDir = await makeTempDir(tempDirs, 'kimi-sdk-skills-work-');
@@ -164,43 +187,6 @@ describe('Session skills', () => {
           title: '/review src/app.ts',
           isCustomTitle: false,
           lastPrompt: '/review src/app.ts',
-        },
-      });
-
-      const statePath = join(session.summary!.sessionDir, 'state.json');
-      const state = JSON.parse(await readFile(statePath, 'utf-8')) as Record<string, unknown>;
-      expect(state['title']).toBe('/review src/app.ts');
-      expect(state['isCustomTitle']).toBe(false);
-      expect(state['lastPrompt']).toBe('/review src/app.ts');
-
-      const skillDir = normalizeWorkDir(await realpath(join(workDir, '.kimi-code', 'skills', 'review')));
-      await expect(
-        waitForAgentWireEvent(
-          homeDir,
-          session.id,
-          'turn.prompt',
-          (event) => event['origin'] !== undefined,
-        ),
-      ).resolves.toMatchObject({
-        type: 'turn.prompt',
-        input: [
-          {
-            type: 'text',
-            text: [
-              'User activated the skill "review". Follow the loaded skill instructions.',
-              '',
-              `<kimi-skill-loaded name="review" trigger="user-slash" source="project" dir="${skillDir}" args="src/app.ts">`,
-              'Review the requested file.',
-              '',
-              'ARGUMENTS: src/app.ts',
-              '</kimi-skill-loaded>',
-            ].join('\n'),
-          },
-        ],
-        origin: {
-          kind: 'skill_activation',
-          skillName: 'review',
-          skillArgs: 'src/app.ts',
         },
       });
     } finally {
@@ -295,6 +281,65 @@ describe('Session skills', () => {
   it('exposes public skill event and summary types', () => {
     expectTypeOf<SkillSummary['name']>().toEqualTypeOf<string>();
     expectTypeOf<SkillActivatedEvent['skillName']>().toEqualTypeOf<string>();
+  });
+});
+
+describe('KimiHarness workspace skills', () => {
+  it('returns project skills when no session exists', async () => {
+    const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-workspace-skills-home-');
+    const workDir = await makeTempDir(tempDirs, 'kimi-sdk-workspace-skills-work-');
+    await writeSkill(workDir, 'workspace-review', [
+      '---',
+      'name: workspace-review',
+      'description: Review workspace changes',
+      '---',
+      '',
+      'Inspect every changed file.',
+    ]);
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      const skills = await harness.listWorkspaceSkills(workDir);
+
+      expect(skills.find((skill) => skill.name === 'workspace-review')).toMatchObject({
+        name: 'workspace-review',
+        description: 'Review workspace changes',
+        source: 'project',
+      });
+      expect(harness.sessions.size).toBe(0);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('preserves the core error when workDir is empty', async () => {
+    const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-workspace-skills-home-');
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      await expect(harness.listWorkspaceSkills('   ')).rejects.toMatchObject({
+        name: 'KimiError',
+        code: 'request.work_dir_required',
+        message: 'listWorkspaceSkills requires workDir',
+      } satisfies Partial<KimiError>);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('preserves the core error when workDir is not a string', async () => {
+    const homeDir = await makeTempDir(tempDirs, 'kimi-sdk-workspace-skills-home-');
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      await expect(harness.listWorkspaceSkills(null as never)).rejects.toMatchObject({
+        name: 'KimiError',
+        code: 'request.work_dir_required',
+        message: 'listWorkspaceSkills requires workDir',
+      } satisfies Partial<KimiError>);
+    } finally {
+      await harness.close();
+    }
   });
 });
 

@@ -62,21 +62,24 @@
       # pnpmConfigHook (dependencies for that workspace won't be fetched).
       # -------------------------------------------------------------------
       workspacePaths = [
-        ./packages/acp-adapter
-        ./packages/agent-core
-        ./packages/server
-        ./packages/server-e2e
+        ./packages/acp-server
+        ./packages/agent-core-v2
+        ./packages/kap-server
         ./packages/kaos
+        ./packages/klient
         ./packages/kosong
         ./packages/migration-legacy
+        ./packages/minidb
         ./packages/node-sdk
         ./packages/oauth
         ./packages/pi-tui
-        ./packages/protocol
+        ./packages/remote-control
         ./packages/telemetry
+        ./packages/transcript
+        ./packages/tree-sitter-bash
         ./apps/kimi-code
-        ./apps/kimi-desktop
-        ./apps/kimi-web
+        ./apps/vscode
+        ./apps/kimi-inspect
         ./apps/vis
         ./apps/vis/server
         ./apps/vis/web
@@ -84,21 +87,24 @@
       ];
 
       workspaceNames = [
-        "@moonshot-ai/acp-adapter"
-        "@moonshot-ai/agent-core"
-        "@moonshot-ai/server"
-        "@moonshot-ai/server-e2e"
+        "@moonshot-ai/acp-server"
+        "@moonshot-ai/agent-core-v2"
+        "@moonshot-ai/kap-server"
         "@moonshot-ai/kaos"
         "@moonshot-ai/kosong"
         "@moonshot-ai/migration-legacy"
+        "@moonshot-ai/minidb"
         "@moonshot-ai/kimi-code-sdk"
         "@moonshot-ai/kimi-code-oauth"
+        "@moonshot-ai/klient"
         "@moonshot-ai/pi-tui"
-        "@moonshot-ai/protocol"
+        "@moonshot-ai/remote-control"
         "@moonshot-ai/kimi-telemetry"
+        "@moonshot-ai/transcript"
+        "@moonshot-ai/tree-sitter-bash"
         "@moonshot-ai/kimi-code"
-        "@moonshot-ai/kimi-desktop"
-        "@moonshot-ai/kimi-web"
+        "kimi-code"
+        "@moonshot-ai/kimi-inspect"
         "@moonshot-ai/vis"
         "@moonshot-ai/vis-server"
         "@moonshot-ai/vis-web"
@@ -152,7 +158,7 @@
               inherit (finalAttrs) pname version src pnpmWorkspaces;
               inherit pnpm;
               fetcherVersion = 3;
-              hash = "sha256-RPjCWL7NqDSKgpHGL16zPlUOfjWN2rkaDY/4GFAD8VA=";
+              hash = "sha256-xrn34bQ76s+ouOZPHZ4TBkpTHxG7gZejmx8RqSii2uA=";
             };
 
             nativeBuildInputs = [
@@ -191,10 +197,10 @@
               ''}
               # The SEA blob step (scripts/native/02-sea-blob.mjs) embeds the
               # Kimi web assets from apps/kimi-code/dist-web and fails if that
-              # directory is missing. Build the web app and stage its assets
-              # before producing the native executable.
-              pnpm --filter=@moonshot-ai/kimi-web run build
-              node apps/kimi-code/scripts/copy-web-assets.mjs
+              # directory is missing. The bundle is committed (synced from the
+              # code-app repo) — verify it is in place before producing the
+              # native executable.
+              node apps/kimi-code/scripts/check-web-assets.mjs
               pnpm --filter=@moonshot-ai/kimi-code run build:native:sea
               runHook postBuild
             '';

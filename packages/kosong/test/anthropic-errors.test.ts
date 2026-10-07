@@ -1,6 +1,7 @@
 import {
   APIConnectionError,
   APIContextOverflowError,
+  APIProviderQuotaExhaustedError,
   APIProviderRateLimitError,
   APIStatusError,
   APITimeoutError,
@@ -8,11 +9,13 @@ import {
   isRetryableGenerateError,
 } from '#/errors';
 import { convertAnthropicError, AnthropicChatProvider } from '#/providers/anthropic';
+import { classifyKimiQuotaError } from '#/providers/kimi-errors';
 import {
   APIConnectionError as AnthropicConnectionError,
   APIConnectionTimeoutError as AnthropicTimeoutError,
   APIError as AnthropicAPIError,
   AnthropicError,
+  APIUserAbortError as AnthropicUserAbortError,
   AuthenticationError as AnthropicAuthenticationError,
   RateLimitError as AnthropicRateLimitError,
 } from '@anthropic-ai/sdk';
@@ -86,6 +89,30 @@ describe('convertAnthropicError', () => {
     expect((result as APIProviderRateLimitError).statusCode).toBe(429);
   });
 
+  it('reads an integer retry-after header (seconds) onto the rate-limit error', () => {
+    const err = AnthropicAPIError.generate(
+      429,
+      { type: 'error', error: { type: 'rate_limit_error', message: 'rate limited' } },
+      'rate limited',
+      new Headers({ 'retry-after': '7' }),
+    );
+    const result = convertAnthropicError(err);
+    expect(result).toBeInstanceOf(APIProviderRateLimitError);
+    expect((result as APIProviderRateLimitError).retryAfterMs).toBe(7_000);
+  });
+
+  it('ignores a non-integer (HTTP-date) retry-after header, leaving retryAfterMs null', () => {
+    const err = AnthropicAPIError.generate(
+      429,
+      { type: 'error', error: { type: 'rate_limit_error', message: 'rate limited' } },
+      'rate limited',
+      new Headers({ 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' }),
+    );
+    const result = convertAnthropicError(err);
+    expect(result).toBeInstanceOf(APIProviderRateLimitError);
+    expect((result as APIProviderRateLimitError).retryAfterMs).toBeNull();
+  });
+
   it('generic AnthropicError -> ChatProviderError', () => {
     const err = new AnthropicError('something went wrong');
     const result = convertAnthropicError(err);
@@ -106,6 +133,35 @@ describe('convertAnthropicError', () => {
     expect(result.message).toContain('string error');
   });
 
+  it('APIUserAbortError throws the standard abort DOMException instead of being classified', () => {
+    // A user cancellation must never be converted into (or returned as) a
+    // retryable provider error: the guard at the very front of the
+    // classification chain throws the standard abort shape.
+    const err = new AnthropicUserAbortError({ message: 'aborted by user' });
+    let thrown: unknown;
+    try {
+      convertAnthropicError(err);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(DOMException);
+    expect((thrown as DOMException).name).toBe('AbortError');
+    expect(isRetryableGenerateError(thrown)).toBe(false);
+  });
+
+  it('bare AbortError DOMException throws the standard abort DOMException', () => {
+    const err = new DOMException('The operation was aborted.', 'AbortError');
+    let thrown: unknown;
+    try {
+      convertAnthropicError(err);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(DOMException);
+    expect((thrown as DOMException).name).toBe('AbortError');
+    expect(isRetryableGenerateError(thrown)).toBe(false);
+  });
+
   it('classifies undici TypeError("terminated") as a retryable APIConnectionError', () => {
     // Node v24 + undici raises a raw `TypeError: terminated` when an SSE
     // response stream is dropped mid-flight. It is NOT an Anthropic SDK error,
@@ -120,11 +176,17 @@ describe('convertAnthropicError', () => {
     expect(isRetryableGenerateError(result)).toBe(true);
   });
 
-  it('still wraps an unrelated raw Error as a non-retryable ChatProviderError', () => {
+  it('still wraps an unrelated raw Error as a base ChatProviderError, now retryable via fallback', () => {
+    // An unrelated raw Error is NOT an Anthropic SDK error and carries no
+    // usable HTTP status, so convertAnthropicError wraps it as a base
+    // ChatProviderError (constructor check guards that typing). The fallback
+    // safety net in isRetryableGenerateError then treats such unclassified
+    // provider failures as transient — retry beats failing the run on the
+    // first blip.
     const result = convertAnthropicError(new Error('something completely unrelated'));
 
     expect(result.constructor).toBe(ChatProviderError);
-    expect(isRetryableGenerateError(result)).toBe(false);
+    expect(isRetryableGenerateError(result)).toBe(true);
   });
 });
 describe('non-stream error propagation', () => {
@@ -403,5 +465,62 @@ describe('stream error propagation', () => {
 
     expect(caught).toBeInstanceOf(APIConnectionError);
     expect(isRetryableGenerateError(caught)).toBe(true);
+  });
+});
+
+describe('convertAnthropicError: quota-exhausted 429 via the convertError hook', () => {
+  const QUOTA_BODY = {
+    type: 'error',
+    error: {
+      type: 'exceeded_current_quota_error',
+      message:
+        'Your account org-0123456789abcdef <ak-test> is suspended due to insufficient balance, please recharge your account or check your plan and billing details',
+    },
+  };
+
+  function quota429(): unknown {
+    return AnthropicAPIError.generate(429, QUOTA_BODY, 'Too many requests', new Headers());
+  }
+
+  it('keeps vendor quota signals a rate limit without the vendor hook', () => {
+    const result = convertAnthropicError(quota429());
+    expect(result).toBeInstanceOf(APIProviderRateLimitError);
+    expect(isRetryableGenerateError(result)).toBe(true);
+  });
+
+  it('classifies the Kimi quota body as quota-exhausted through the hook', () => {
+    const result = convertAnthropicError(quota429(), classifyKimiQuotaError);
+    expect(result).toBeInstanceOf(APIProviderQuotaExhaustedError);
+    expect(isRetryableGenerateError(result)).toBe(false);
+  });
+
+  it('passes already-converted errors through without re-consulting the hook', () => {
+    const calls: unknown[] = [];
+    const converted = new APIProviderQuotaExhaustedError('already classified');
+    const result = convertAnthropicError(converted, (error) => {
+      calls.push(error);
+      return new ChatProviderError('re-classified');
+    });
+    expect(result).toBe(converted);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('the provider threads options.convertError to its generate catch', async () => {
+    const provider = new AnthropicChatProvider({
+      model: 'k25',
+      apiKey: 'test-key',
+      defaultMaxTokens: 1024,
+      stream: false,
+      convertError: classifyKimiQuotaError,
+    });
+    (provider as any)._client.messages.create = vi.fn().mockRejectedValue(quota429());
+
+    await expect(
+      provider.generate(
+        '',
+        [],
+        [{ role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] }],
+      ),
+    ).rejects.toThrow(APIProviderQuotaExhaustedError);
   });
 });

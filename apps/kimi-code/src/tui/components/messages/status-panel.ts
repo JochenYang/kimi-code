@@ -15,14 +15,20 @@ import {
 
 import { PRODUCT_NAME } from '#/constant/app';
 import { currentTheme } from '#/tui/theme';
+import { PERMISSION_MODE_DISPLAY_NAMES } from '#/tui/utils/permission-mode';
 import {
   formatTokenCount,
   ratioSeverity,
   renderProgressBar,
   safeUsageRatio,
+  usagePercent,
 } from '#/utils/usage/usage-format';
 
-import { buildManagedUsageReportLines, type ManagedUsageReport } from './usage-panel';
+import {
+  buildExtraUsageSection,
+  buildManagedUsageReportLines,
+  type ManagedUsageReport,
+} from './usage-panel';
 
 interface FieldRow {
   readonly label: string;
@@ -39,6 +45,9 @@ export interface StatusReportOptions {
   readonly thinkingEffort: ThinkingEffort;
   readonly permissionMode: PermissionMode;
   readonly planMode: boolean;
+  readonly towerMode: boolean;
+  /** Whether the tower experiment is enabled on engine v2 — gates the Tower mode row. */
+  readonly towerAvailable: boolean;
   readonly contextUsage: number;
   readonly contextTokens: number;
   readonly maxContextTokens: number;
@@ -101,14 +110,18 @@ export function buildStatusReportLines(options: StatusReportOptions): string[] {
 
   const permission = options.status?.permission ?? options.permissionMode;
   const planMode = options.status?.planMode ?? options.planMode;
+  const towerMode = options.status?.towerMode ?? options.towerMode;
   const sessionId = options.sessionId.trim().length > 0 ? options.sessionId : 'none';
   const rows: FieldRow[] = [
     { label: 'Model', value: formatModelStatus(options) },
     { label: 'Directory', value: options.workDir },
-    { label: 'Permissions', value: permission },
+    { label: 'Permissions', value: PERMISSION_MODE_DISPLAY_NAMES[permission] },
     { label: 'Plan mode', value: planMode ? 'on' : 'off' },
-    { label: 'Session', value: sessionId },
   ];
+  if (options.towerAvailable) {
+    rows.push({ label: 'Tower mode', value: towerMode ? 'on' : 'off' });
+  }
+  rows.push({ label: 'Session', value: sessionId });
   const title = options.sessionTitle?.trim();
   if (title !== undefined && title.length > 0) rows.push({ label: 'Title', value: title });
   if (options.statusError !== undefined) {
@@ -129,7 +142,7 @@ export function buildStatusReportLines(options: StatusReportOptions): string[] {
     const bar = renderProgressBar(safeRatio, 20);
     const barColoured = currentTheme.fg(severityToken(ratioSeverity(safeRatio)), bar);
     lines.push(
-      `  ${barColoured}  ${value(`${(safeRatio * 100).toFixed(1)}%`.padStart(6, ' '))}  ` +
+      `  ${barColoured}  ${value(`${String(usagePercent(tokens, maxTokens))}%`.padStart(6, ' '))}  ` +
         muted(`(${formatTokenCount(tokens)} / ${formatTokenCount(maxTokens)})`),
     );
   } else {
@@ -143,6 +156,17 @@ export function buildStatusReportLines(options: StatusReportOptions): string[] {
   if (managedSection.length > 0) {
     lines.push('');
     lines.push(...managedSection);
+  }
+
+  const extraSection = buildExtraUsageSection(
+    options.managedUsage?.extraUsage,
+    accent,
+    value,
+    muted,
+  );
+  if (extraSection.length > 0) {
+    lines.push('');
+    lines.push(...extraSection);
   }
 
   return lines;

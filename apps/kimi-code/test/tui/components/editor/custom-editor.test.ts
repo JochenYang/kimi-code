@@ -4,7 +4,7 @@ import type {
   AutocompleteSuggestions,
   TUI,
 } from '@moonshot-ai/pi-tui';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { CustomEditor } from '#/tui/components/editor/custom-editor';
 import { FileMentionProvider } from '#/tui/components/editor/file-mention-provider';
@@ -516,8 +516,6 @@ describe('CustomEditor paste marker expansion', () => {
     expect(editor.getText()).toContain('[paste #1');
     expect(editor.getText()).toContain('[paste #2');
 
-    editor.setText('[paste #1 +15 lines] [paste #2 +15 lines]');
-
     simulateLargePaste(editor, 'anything');
 
     expect(editor.getText()).toContain('[paste #1');
@@ -550,7 +548,9 @@ describe('CustomEditor paste marker expansion', () => {
     simulateLargePaste(editor, 'anything');
     expect(editor.getText()).toContain(longText);
 
-    editor.setText(markerText);
+    // Undo (Ctrl+-) restores both the marker text and its paste-registry entry.
+    editor.handleInput('\u001B[45;5u');
+    expect(editor.getText()).toContain('[paste #1');
 
     simulateLargePaste(editor, 'anything');
     expect(editor.getText()).not.toContain('[paste #');
@@ -587,6 +587,61 @@ describe('CustomEditor paste marker expansion', () => {
     editor.handleInput('x');
     expect(editor.getText()).toContain('x');
   });
+
+  it('falls back to the text paste path when the image paste handler rejects', async () => {
+    const editor = makeEditor();
+    const onTextPaste = vi.fn();
+    editor.onTextPaste = onTextPaste;
+    editor.onPasteImage = vi.fn(async () => {
+      throw new Error('clipboard backend broken');
+    });
+
+    // Regression: a rejecting onPasteImage must not leak an unhandled
+    // rejection — the CLI's crash path turns those into a silent exit.
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on('unhandledRejection', onRejection);
+    try {
+      editor.handleInput(process.platform === 'win32' ? '\u001Bv' : '\u0016');
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(onTextPaste).toHaveBeenCalledOnce();
+      expect(rejections).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
+
+  it('queues Enter and typing until an asynchronous image paste inserts its placeholder', async () => {
+    const editor = makeEditor();
+    const submit = vi.fn();
+    editor.onSubmit = submit;
+    let resolvePaste!: (handled: boolean) => void;
+    editor.onPasteImage = () =>
+      new Promise<boolean>((resolve) => {
+        resolvePaste = (handled) => {
+          editor.insertTextAtCursor?.('[image #1 (1×1)] ');
+          resolve(handled);
+        };
+      });
+
+    const pasteKey = process.platform === 'win32' ? '\u001Bv' : '\u0016';
+    editor.handleInput(pasteKey);
+    editor.handleInput('hello');
+    editor.handleInput('\r');
+
+    expect(editor.getText()).toBe('');
+    expect(submit).not.toHaveBeenCalled();
+
+    resolvePaste(true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(submit).toHaveBeenCalledWith('[image #1 (1×1)] hello');
+  });
 });
 
 describe('CustomEditor shortcut telemetry hooks', () => {
@@ -610,6 +665,68 @@ describe('CustomEditor shortcut telemetry hooks', () => {
 
     expect(onToggleTodoExpand).toHaveBeenCalledOnce();
   });
+
+  it.each(['\u000E', '\u001B[110;5u'] as const)(
+    'toggles Updates focus on %j without changing the draft',
+    (key) => {
+      const editor = makeEditor();
+      const onPageNotify = vi.fn().mockReturnValue(true);
+      editor.onPageNotify = onPageNotify;
+      editor.setText('draft\nsecond line');
+      const cursor = editor.getCursor();
+      editor.handleInput(key);
+      expect(onPageNotify).toHaveBeenCalledWith();
+      expect(editor.getText()).toBe('draft\nsecond line');
+      expect(editor.getCursor()).toEqual(cursor);
+    },
+  );
+
+  it.each([
+    ['\u001B[D', 'left'],
+    ['\u001B[C', 'right'],
+    ['\u001B[A', 'up'],
+    ['\u001B[B', 'down'],
+    ['\u001B', 'escape'],
+  ] as const)('routes %j to the focused Updates panel as %s', (key, panelKey) => {
+    const editor = makeEditor();
+    const onNotifyPanelKey = vi.fn().mockReturnValue(true);
+    editor.onNotifyPanelKey = onNotifyPanelKey;
+    editor.setText('draft');
+    editor.handleInput(key);
+    expect(onNotifyPanelKey).toHaveBeenCalledWith(panelKey);
+    expect(editor.getText()).toBe('draft');
+  });
+
+  it.each(['\u001B[D', '\u001B[A', '\u001B'] as const)(
+    'leaves %j to autocomplete even when the Updates panel is focused',
+    (key) => {
+      const editor = makeEditor();
+      const onNotifyPanelKey = vi.fn();
+      editor.onNotifyPanelKey = onNotifyPanelKey;
+      const internals = editor as unknown as { cancelAutocompleteActivity: () => void };
+      const cancelAutocomplete = vi.spyOn(internals, 'cancelAutocompleteActivity');
+      cancelAutocomplete.mockImplementation(() => {});
+      vi.spyOn(editor, 'hasAutocompleteActivity').mockReturnValue(true);
+      editor.setText('/rev');
+      editor.handleInput(key);
+      expect(onNotifyPanelKey).not.toHaveBeenCalled();
+      if (key === '\u001B') expect(cancelAutocomplete).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps the original editor bindings when Updates paging is unavailable', () => {
+    const editor = makeEditor();
+    const baseline = makeEditor();
+    editor.onPageNotify = () => false;
+    for (const instance of [editor, baseline]) instance.setText('first\nsecond');
+    for (const key of ['\u0010', '\u000E']) {
+      editor.handleInput(key);
+      baseline.handleInput(key);
+      expect(editor.getCursor()).toEqual(baseline.getCursor());
+      expect(editor.getText()).toBe(baseline.getText());
+    }
+  });
+
 });
 
 describe('CustomEditor bash mode border label', () => {
@@ -758,129 +875,5 @@ describe('CustomEditor bash mode file completion', () => {
     // request force:true path completion.
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((call) => call.force === true)).toBe(true);
-  });
-});
-
-describe('CustomEditor full re-render on autocomplete close', () => {
-  function makeEditorWithRenderSpy(contentLines: number): {
-    editor: CustomEditor;
-    requestRender: ReturnType<typeof vi.fn>;
-  } {
-    const requestRender = vi.fn();
-    const tui = {
-      requestRender,
-      terminal: { rows: 40, cols: 120 },
-      render: vi.fn(() => Array.from({ length: contentLines }, () => '')),
-    } as unknown as TUI;
-    return { editor: new CustomEditor(tui), requestRender };
-  }
-
-  // Drive one render frame so the render-edge detector observes the menu state.
-  function renderFrame(editor: CustomEditor): void {
-    editor.render(120);
-  }
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('forces a full re-render on the render frame after Escape closes the menu (content overflows)', async () => {
-    vi.stubEnv('TMUX', '');
-    const { editor, requestRender } = makeEditorWithRenderSpy(50);
-    editor.setAutocompleteProvider(providerReturning([{ value: 'help', label: 'help' }]));
-
-    editor.handleInput('/');
-    await flushAutocomplete();
-    expect(editor.isShowingAutocomplete()).toBe(true);
-    renderFrame(editor); // record wasShowing = true
-
-    editor.handleInput('');
-    expect(editor.isShowingAutocomplete()).toBe(false);
-
-    renderFrame(editor); // close edge -> schedule helper
-    await flushAutocomplete();
-    expect(requestRender).toHaveBeenCalledWith(true);
-  });
-
-  it('keeps differential rendering when the content fits on one screen', async () => {
-    vi.stubEnv('TMUX', '');
-    const { editor, requestRender } = makeEditorWithRenderSpy(10);
-    editor.setAutocompleteProvider(providerReturning([{ value: 'help', label: 'help' }]));
-
-    editor.handleInput('/');
-    await flushAutocomplete();
-    expect(editor.isShowingAutocomplete()).toBe(true);
-    renderFrame(editor);
-
-    editor.handleInput('');
-    expect(editor.isShowingAutocomplete()).toBe(false);
-
-    renderFrame(editor);
-    await flushAutocomplete();
-    expect(requestRender).not.toHaveBeenCalledWith(true);
-  });
-
-  it('forces a full re-render when the content exactly fills one screen', async () => {
-    vi.stubEnv('TMUX', '');
-    const { editor, requestRender } = makeEditorWithRenderSpy(40);
-    editor.setAutocompleteProvider(providerReturning([{ value: 'help', label: 'help' }]));
-
-    editor.handleInput('/');
-    await flushAutocomplete();
-    expect(editor.isShowingAutocomplete()).toBe(true);
-    renderFrame(editor);
-
-    editor.handleInput('');
-    expect(editor.isShowingAutocomplete()).toBe(false);
-
-    renderFrame(editor);
-    await flushAutocomplete();
-    expect(requestRender).toHaveBeenCalledWith(true);
-  });
-
-  it('does not force a full re-render inside tmux', async () => {
-    vi.stubEnv('TMUX', '/tmp/tmux-501/default,1234,0');
-    const { editor, requestRender } = makeEditorWithRenderSpy(50);
-    editor.setAutocompleteProvider(providerReturning([{ value: 'help', label: 'help' }]));
-
-    editor.handleInput('/');
-    await flushAutocomplete();
-    expect(editor.isShowingAutocomplete()).toBe(true);
-    renderFrame(editor);
-
-    editor.handleInput('');
-    expect(editor.isShowingAutocomplete()).toBe(false);
-
-    renderFrame(editor);
-    await flushAutocomplete();
-    expect(requestRender).not.toHaveBeenCalledWith(true);
-  });
-
-  it('forces a full re-render when Backspace deletes the slash and the menu closes asynchronously', async () => {
-    vi.stubEnv('TMUX', '');
-    const { editor, requestRender } = makeEditorWithRenderSpy(50);
-    const provider: AutocompleteProvider = {
-      getSuggestions: vi.fn(async (lines, cursorLine, cursorCol) => {
-        const text = (lines[cursorLine] ?? '').slice(0, cursorCol);
-        if (!text.startsWith('/')) return { items: [], prefix: text };
-        return { items: [{ value: 'help', label: 'help' }], prefix: '/' };
-      }),
-      applyCompletion: vi.fn((lines, cursorLine, cursorCol) => ({ lines, cursorLine, cursorCol })),
-    };
-    editor.setAutocompleteProvider(provider);
-
-    editor.handleInput('/');
-    await flushAutocomplete();
-    expect(editor.isShowingAutocomplete()).toBe(true);
-    renderFrame(editor); // record wasShowing = true
-
-    editor.handleInput(''); // Backspace deletes the '/'
-    await flushAutocomplete();
-    await new Promise((resolve) => setTimeout(resolve, 0)); // let async cancelAutocomplete settle
-    expect(editor.isShowingAutocomplete()).toBe(false);
-
-    renderFrame(editor); // close edge -> schedule helper
-    await flushAutocomplete();
-    expect(requestRender).toHaveBeenCalledWith(true);
   });
 });

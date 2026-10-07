@@ -1,9 +1,16 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   translateContextLines,
   containsUsableMessage,
   analyzeContextContent,
+  extractLastUsageTokenCount,
 } from '../../src/sessions/translator.js';
+import { extractToolCallDisplays } from '../../src/sessions/tool-call-display.js';
+
+const FIXTURES = fileURLToPath(new URL('../fixtures', import.meta.url));
 
 describe('translateContextLines', () => {
   it('drops _system_prompt, _checkpoint, _usage markers', () => {
@@ -98,6 +105,19 @@ describe('translateContextLines', () => {
   });
 });
 
+describe('extractToolCallDisplays', () => {
+  it('recovers the file diff from a real legacy wire fixture', async () => {
+    const wire = await readFile(join(FIXTURES, 'archived', 'wire.jsonl'), 'utf-8');
+
+    expect(extractToolCallDisplays(wire).get('WriteFile:1')).toEqual({
+      kind: 'diff',
+      path: expect.stringMatching(/translated\.py$/),
+      before: '',
+      after: expect.stringContaining('def main():'),
+    });
+  });
+});
+
 describe('containsUsableMessage', () => {
   it('false when lines hold only _system_prompt / _checkpoint / _usage markers', () => {
     expect(
@@ -169,5 +189,32 @@ describe('analyzeContextContent', () => {
         '{"role":"_system_prompt","content":"x"}',
       ]),
     ).toBe('empty');
+  });
+});
+
+describe('extractLastUsageTokenCount', () => {
+  it('returns the token_count of the last _usage row', () => {
+    expect(
+      extractLastUsageTokenCount([
+        '{"role":"_usage","token_count":100}',
+        '{"role":"user","content":"hi"}',
+        '{"role":"_usage","token_count":9133}',
+      ]),
+    ).toBe(9133);
+  });
+
+  it('returns undefined when no _usage row exists', () => {
+    expect(extractLastUsageTokenCount(['{"role":"user","content":"hi"}'])).toBeUndefined();
+  });
+
+  it('ignores malformed lines and non-numeric token_count values', () => {
+    expect(
+      extractLastUsageTokenCount([
+        'not-json',
+        '{"role":"_usage","token_count":"many"}',
+        '{"role":"_usage","token_count":-5}',
+        '{"role":"_usage"}',
+      ]),
+    ).toBeUndefined();
   });
 });

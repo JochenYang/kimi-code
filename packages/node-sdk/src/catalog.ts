@@ -1,19 +1,34 @@
-import type { KimiConfig, ModelAlias } from '@moonshot-ai/agent-core';
+import type { KimiConfig, ModelAlias } from '#/config/index';
 import {
   catalogBaseUrl,
   catalogProviderModels,
   inferWireType,
+  resolveCatalogImport,
   type Catalog,
+  type CatalogImportInvalidReason,
+  type CatalogImportResolution,
   type CatalogModel,
   type CatalogProviderEntry,
   type ModelCapability,
   type ProviderType,
 } from '@moonshot-ai/kosong';
 
-export { catalogBaseUrl, catalogProviderModels, inferWireType };
+export { catalogBaseUrl, catalogProviderModels, inferWireType, resolveCatalogImport };
+export type { CatalogImportInvalidReason, CatalogImportResolution };
 export type { Catalog, CatalogModel, CatalogProviderEntry };
 
 export const DEFAULT_CATALOG_URL = 'https://models.dev/api.json';
+
+export class RegistryImportError extends Error {
+  constructor(
+    message: string,
+    readonly phase: 'fetch' | 'empty' | 'apply',
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'RegistryImportError';
+  }
+}
 
 export class CatalogFetchError extends Error {
   readonly status: number;
@@ -23,13 +38,25 @@ export class CatalogFetchError extends Error {
   }
 }
 
-/** Fetches a models.dev-style catalog. Public endpoint, no credentials needed. */
+export interface FetchCatalogOptions {
+  readonly signal?: AbortSignal;
+  readonly fetchImpl?: typeof fetch;
+  readonly userAgent?: string;
+}
+
+/**
+ * Fetches a models.dev-style catalog. Public endpoint, no credentials needed.
+ * `userAgent` identifies the host product (e.g. `kimi-code-cli/1.2.3`); when
+ * omitted the request falls back to the runtime default (`User-Agent: node`).
+ */
 export async function fetchCatalog(
   url: string,
-  signal?: AbortSignal,
-  fetchImpl: typeof fetch = fetch,
+  options: FetchCatalogOptions = {},
 ): Promise<Catalog> {
-  const res = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal });
+  const { signal, fetchImpl = fetch, userAgent } = options;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (userAgent !== undefined) headers['User-Agent'] = userAgent;
+  const res = await fetchImpl(url, { headers, signal });
   if (!res.ok) {
     throw new CatalogFetchError(`Failed to fetch catalog (HTTP ${res.status}).`, res.status);
   }
@@ -47,20 +74,31 @@ function capabilityToStrings(capability: ModelCapability): string[] | undefined 
   if (capability.audio_in) caps.push('audio_in');
   if (capability.thinking) caps.push('thinking');
   if (capability.tool_use) caps.push('tool_use');
-  if (capability.select_tools === true) caps.push('select_tools');
+  if (capability.dynamically_loaded_tools === true) caps.push('dynamically_loaded_tools');
   return caps.length > 0 ? caps : undefined;
 }
 
 /** Builds a kimi-code model alias from a normalized catalog model. */
 export function catalogModelToAlias(providerId: string, model: CatalogModel): ModelAlias {
+  const caps = capabilityToStrings(model.capability);
   return {
     provider: providerId,
     model: model.id,
     maxContextSize: model.capability.max_context_tokens,
+    maxInputSize: model.capability.max_input_tokens,
     maxOutputSize: model.maxOutputSize,
-    capabilities: capabilityToStrings(model.capability),
+    // A model that always reasons advertises `always_thinking` instead of
+    // `thinking`, so the UI locks thinking on and offers no off option.
+    capabilities:
+      model.alwaysThinking === true
+        ? caps?.map((cap) => (cap === 'thinking' ? 'always_thinking' : cap))
+        : caps,
     displayName: model.name,
     reasoningKey: model.reasoningKey,
+    supportEfforts: model.supportEfforts === undefined ? undefined : [...model.supportEfforts],
+    offEffort: model.offEffort,
+    protocol: model.protocol,
+    baseUrl: model.baseUrl,
   };
 }
 

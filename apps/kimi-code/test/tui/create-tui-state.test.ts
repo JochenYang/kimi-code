@@ -1,6 +1,9 @@
-
+import { ScrollView, TuiAltScreen, TuiMainScreen, VStack } from '@moonshot-ai/pi-tui';
 import { describe, it, expect } from 'vitest';
 
+import { GutterContainer } from '#/tui/components/chrome/gutter-container';
+import { StickyUserMessageComponent } from '#/tui/components/messages/sticky-user-message';
+import { TranscriptView } from '#/tui/components/messages/transcript-view';
 import { createTUIState, type KimiTUIOptions } from '#/tui/kimi-tui';
 import type { AppState } from '#/tui/types';
 
@@ -14,6 +17,7 @@ function fakeInitialAppState(): AppState {
     planMode: false,
     inputMode: 'prompt',
     swarmMode: false,
+    towerMode: false,
     thinkingEffort: 'off',
     contextUsage: 0,
     contextTokens: 0,
@@ -22,6 +26,7 @@ function fakeInitialAppState(): AppState {
     isReplaying: false,
     streamingPhase: 'idle',
     streamingStartTime: 0,
+    stepRetry: null,
     theme: 'dark',
     version: '0.0.0-test',
     editorCommand: null,
@@ -54,10 +59,13 @@ describe('createTUIState', () => {
     expect(state.activityContainer).toBeDefined();
     expect(state.todoPanelContainer).toBeDefined();
     expect(state.queueContainer).toBeDefined();
+    expect(state.surveyContainer).toBeDefined();
     expect(state.editorContainer).toBeDefined();
     expect(state.editor).toBeDefined();
     expect(state.footer).toBeDefined();
     expect(state.todoPanel).toBeDefined();
+    expect(state.notifyPanelContainer).toBeDefined();
+    expect(state.notifyPanel).toBeDefined();
     expect(state.theme.palette).toBeDefined();
 
     // App state is cloned from initialAppState, not reused by reference.
@@ -83,5 +91,73 @@ describe('createTUIState', () => {
     expect(state.loadingSessions).toBe(false);
     expect(state.sessionsScope).toBe('cwd');
     expect(state.activitySpinner).toBeNull();
+  });
+
+  it('uses the main-screen renderer by default', () => {
+    const state = createTUIState({
+      initialAppState: fakeInitialAppState(),
+      startup: {
+        continueLast: false,
+        yolo: false,
+        auto: false,
+        plan: false,
+      },
+    });
+
+    expect(state.ui).toBeInstanceOf(TuiMainScreen);
+    expect(state.ui.mode).toBe('regular');
+    expect(state.dockContainer).toBeUndefined();
+  });
+
+  it('builds an alternate-screen renderer with a docked layout in fullscreen mode', () => {
+    const state = createTUIState({
+      initialAppState: { ...fakeInitialAppState(), tuiMode: 'fullscreen' },
+      startup: {
+        continueLast: false,
+        yolo: false,
+        auto: false,
+        plan: false,
+      },
+    });
+
+    expect(state.ui).toBeInstanceOf(TuiAltScreen);
+    expect(state.ui.mode).toBe('fullscreen');
+
+    // The chrome docks below the transcript ScrollView, in z-order.
+    const dock = state.dockContainer;
+    expect(dock).toBeDefined();
+    expect(dock?.children).toEqual([
+      state.activityContainer,
+      state.todoPanelContainer,
+      state.notifyPanelContainer,
+      state.queueContainer,
+      state.btwPanelContainer,
+      state.surveyContainer,
+      state.editorContainer,
+    ]);
+
+    // The layout root is mounted and the root children list stays empty.
+    expect((state.ui as TuiAltScreen).getLayoutRoot()).toBeDefined();
+    expect(state.ui.children).toHaveLength(0);
+
+    // The sticky user message sits above the transcript ScrollView, outside
+    // the scrolling region, so it is never carried away by scrolling.
+    const rootChildren = ((state.ui as TuiAltScreen).getLayoutRoot() as VStack).children;
+    expect(rootChildren[0]).toBeInstanceOf(TranscriptView);
+    const transcriptChildren = (rootChildren[0] as TranscriptView).children;
+    expect((transcriptChildren[0] as GutterContainer).children[0]).toBeInstanceOf(
+      StickyUserMessageComponent,
+    );
+    expect(transcriptChildren[1]).toBeInstanceOf(ScrollView);
+    expect(rootChildren[1]).toBe(state.dockContainer);
+
+    // Mouse capture replaces native terminal link activation / right-click
+    // paste, so both must be routed through renderer callbacks.
+    const internals = state.ui as unknown as {
+      openUrl?: (url: string) => void;
+      onRightClickPaste?: () => void;
+    };
+    expect(typeof internals.openUrl).toBe('function');
+    expect(typeof internals.onRightClickPaste).toBe('function');
   });
 });

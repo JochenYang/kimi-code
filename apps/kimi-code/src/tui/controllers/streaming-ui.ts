@@ -36,6 +36,7 @@ export interface StreamingUIHost {
   shiftQueuedMessage(): QueuedMessage | undefined;
   pushTranscriptEntry(entry: TranscriptEntry): void;
   mergeCurrentTurnSteps(): void;
+  mergeCompletedTurnAssistants(): void;
 }
 
 export class StreamingUIController {
@@ -57,6 +58,7 @@ export class StreamingUIController {
   private _activeThinkingComponent: ThinkingComponent | undefined = undefined;
   private _activeCompactionBlock: CompactionComponent | undefined = undefined;
   private _activeToolCalls = new Map<string, ToolCallBlockData>();
+  private _runningWaitForCalls = new Set<string>();
   private _streamingToolCallArguments = new Map<
     string,
     { name?: string; argumentsText: string; startedAtMs: number }
@@ -144,6 +146,21 @@ export class StreamingUIController {
 
   hasActiveToolCall(id: string): boolean {
     return this._activeToolCalls.has(id);
+  }
+
+  /** Marks a main-agent WaitFor call as actually waiting — its first
+   *  progress update arrives only once the wait began, never for calls that
+   *  were rejected, skipped, or had nothing to wait for. Returns whether the
+   *  call was newly marked. */
+  markWaitForRunning(toolCallId: string): boolean {
+    if (this._activeToolCalls.get(toolCallId)?.name !== 'WaitFor') return false;
+    if (this._runningWaitForCalls.has(toolCallId)) return false;
+    this._runningWaitForCalls.add(toolCallId);
+    return true;
+  }
+
+  isWaitForRunning(): boolean {
+    return this._runningWaitForCalls.size > 0;
   }
 
   setActiveToolCall(id: string, toolCall: ToolCallBlockData): void {
@@ -357,6 +374,7 @@ export class StreamingUIController {
       this.onToolCallEnd(toolCallId, result);
     }
     this._activeToolCalls.delete(toolCallId);
+    this._runningWaitForCalls.delete(toolCallId);
     this._streamingToolCallArguments.delete(toolCallId);
     return matchedCall;
   }
@@ -541,6 +559,7 @@ export class StreamingUIController {
 
   resetToolCallState(): void {
     this._activeToolCalls.clear();
+    this._runningWaitForCalls.clear();
   }
 
   finalizeLiveTextBuffers(nextMode: LivePaneState['mode'] = 'idle'): void {
@@ -555,6 +574,9 @@ export class StreamingUIController {
     const completedTurnKey =
       this._currentTurnId ?? `local:${String(state.appState.streamingStartTime)}`;
     this.finalizeLiveTextBuffers('idle');
+    // The finished turn keeps only its conclusion-bearing tail; intermediate
+    // chatter folds into the step summary.
+    this.host.mergeCompletedTurnAssistants();
     this.resetToolCallState();
     this._currentTurnId = undefined;
 
@@ -596,6 +618,7 @@ export class StreamingUIController {
       turnId: this._currentTurnId,
       renderMode: 'markdown' as const,
       content: '',
+      modelText: true,
     };
     const component = new AssistantMessageComponent();
     this._streamingBlock = { component, entry };
@@ -622,7 +645,11 @@ export class StreamingUIController {
   }
 
   onThinkingUpdate(fullText: string): void {
-    if (fullText.length === 0 && this._activeThinkingComponent === undefined) return;
+    // Skip thinking that carries nothing visible — empty (e.g. encrypted
+    // reasoning) or whitespace-only (a model occasionally streams a single
+    // space as thinking). Session replay funnels through here as well, so a
+    // stored whitespace-only think part never becomes a bare bullet line.
+    if (fullText.trim().length === 0 && this._activeThinkingComponent === undefined) return;
     const { state } = this.host;
     if (this._activeThinkingComponent === undefined) {
       this._pendingAgentGroup = null;
@@ -830,8 +857,9 @@ export class StreamingUIController {
     const children = state.transcriptContainer.children;
     const idx = children.indexOf(solo);
     if (idx >= 0) {
+      // In-place replacement is picked up by the container's ref-checked
+      // render cache; a tree-wide invalidate is unnecessary (and costly).
       children[idx] = group;
-      state.transcriptContainer.invalidate();
     } else {
       state.transcriptContainer.addChild(group);
     }
@@ -884,11 +912,13 @@ export class StreamingUIController {
   private upgradeSoloReadToGroup(solo: ToolCallComponent): ReadGroupComponent {
     const { state } = this.host;
     const group = new ReadGroupComponent(state.ui);
+    if (state.toolOutputExpanded) group.setExpanded(true);
     const children = state.transcriptContainer.children;
     const idx = children.indexOf(solo);
     if (idx >= 0) {
+      // In-place replacement is picked up by the container's ref-checked
+      // render cache; a tree-wide invalidate is unnecessary (and costly).
       children[idx] = group;
-      state.transcriptContainer.invalidate();
     } else {
       state.transcriptContainer.addChild(group);
     }

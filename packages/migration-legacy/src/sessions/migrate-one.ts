@@ -2,17 +2,22 @@ import { existsSync } from 'node:fs';
 import { readFile, mkdir, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { OldSessionStateSchema, type OldSessionState } from '../kimi-cli-schema.js';
+import type { OldSessionState } from '../kimi-cli-schema.js';
+import { readTodoItems } from '@moonshot-ai/agent-core-v2/features/todo/todoItem';
 import { targetSessionsDir } from '../paths.js';
 import { computeWorkdirBucket } from './workdir-bucket.js';
 import { closeDanglingToolCalls } from './close-tool-calls.js';
 import {
   analyzeContextContent,
+  extractLastUsageTokenCount,
   translateContextLines,
   type NormalizedMessage,
 } from './translator.js';
+import { readMergedSessionState, type LegacySessionRef } from './source.js';
 import { writeMainAgentWire } from './wire-writer.js';
 import { writeSessionState } from './state-writer.js';
+import { extractToolCallDisplays } from './tool-call-display.js';
+import { buildSubagentTaskRecords, migrateLegacySubagents } from './subagents.js';
 
 export type MigrateOneResult =
   | { readonly outcome: 'migrated'; readonly targetDir: string }
@@ -22,15 +27,14 @@ export type MigrateOneResult =
   | { readonly outcome: 'failed'; readonly reason: string };
 
 export interface MigrateOneInput {
-  readonly sourceSessionDir: string;
-  readonly oldSessionUuid: string;
+  readonly source: LegacySessionRef;
   readonly workdirPath: string;
   readonly targetHome: string;
 }
 
 export async function migrateOneSession(input: MigrateOneInput): Promise<MigrateOneResult> {
   const bucket = computeWorkdirBucket(input.workdirPath);
-  const targetDir = join(targetSessionsDir(input.targetHome), bucket, `ses_${input.oldSessionUuid}`);
+  const targetDir = join(targetSessionsDir(input.targetHome), bucket, `ses_${input.source.uuid}`);
 
   if (existsSync(targetDir)) {
     const cls = await classifyExistingTarget(targetDir);
@@ -48,32 +52,45 @@ export async function migrateOneSession(input: MigrateOneInput): Promise<Migrate
     await rm(targetDir, { recursive: true, force: true });
   }
 
-  let oldState: Partial<OldSessionState> = {};
-  try {
-    const stateText = await readFile(join(input.sourceSessionDir, 'state.json'), 'utf-8');
-    oldState = OldSessionStateSchema.parse(JSON.parse(stateText));
-  } catch {
-    // missing or corrupt state — proceed with defaults
-  }
+  const oldState: Partial<OldSessionState> = await readMergedSessionState(input.source.sessionDir);
 
   let messages: NormalizedMessage[] = [];
   let lastUserPrompt = '';
   let contextLines: readonly string[] = [];
+  let oldWireText: string | undefined;
   try {
-    const contextText = await readFile(join(input.sourceSessionDir, 'context.jsonl'), 'utf-8');
+    if (input.source.contextPath === undefined) {
+      return { outcome: 'failed', reason: 'cannot read context.jsonl' };
+    }
+    const contextText = await readFile(input.source.contextPath, 'utf-8');
     contextLines = contextText.split(/\r?\n/);
-    messages = closeDanglingToolCalls(translateContextLines(contextLines));
+    if (input.source.sessionDir !== undefined) {
+      try {
+        oldWireText = await readFile(join(input.source.sessionDir, 'wire.jsonl'), 'utf-8');
+      } catch {
+        // A missing/corrupt wire must not prevent the model-facing context from
+        // migrating; it only means UI display enrichment is unavailable.
+      }
+    }
+    const toolCallDisplays =
+      oldWireText === undefined ? undefined : extractToolCallDisplays(oldWireText);
+    messages = closeDanglingToolCalls(
+      translateContextLines(contextLines, toolCallDisplays),
+    );
     lastUserPrompt = extractLastUserText(messages);
   } catch {
     return { outcome: 'failed', reason: 'cannot read context.jsonl' };
   }
 
-  if (messages.length === 0) {
+  const customTitle = oldState.custom_title;
+  const hasCustomTitle = typeof customTitle === 'string' && customTitle.length > 0;
+
+  if (messages.length === 0 && !hasCustomTitle) {
     // No `user`/`assistant`/`tool` rows survived translation. Re-analyze the
     // raw lines to tell a genuinely empty/cleared session apart from one
     // whose every line failed to parse — the latter is a real data problem
     // and must show up in `migration-errors.log`, not get silently lumped in
-    // with skipped-empty. `classifySessionDir` normally catches both ahead
+    // with skipped-empty. `classifyLegacySession` normally catches both ahead
     // of time; this stays as a defense-in-depth safety net.
     if (analyzeContextContent(contextLines) === 'corrupt') {
       return {
@@ -89,48 +106,58 @@ export async function migrateOneSession(input: MigrateOneInput): Promise<Migrate
   if (wireMtimeS !== null && wireMtimeS !== undefined) {
     createdAtMs = Math.floor(wireMtimeS * 1000);
   } else {
-    // No recorded `wire_mtime`: fall back to the source `wire.jsonl` mtime —
-    // the SAME signal `migrateSessionsStep`/detection rank recency by — so
-    // post-migration `SessionStore.list()` ordering matches the detected
-    // "most recent" order. `Date.now()` would stamp every such session with
-    // the migration time and break resume ordering.
-    try {
-      createdAtMs = Math.floor(
-        (await stat(join(input.sourceSessionDir, 'wire.jsonl'))).mtimeMs,
-      );
-    } catch {
-      createdAtMs = Date.now();
-    }
+    // No recorded `wire_mtime`: fall back to the source files' mtime — the
+    // SAME signal detection ranks recency by — so post-migration
+    // `SessionStore.list()` ordering matches the detected "most recent" order.
+    // `Date.now()` would stamp every such session with the migration time and
+    // break resume ordering.
+    createdAtMs = await readSourceMtime(input.source) ?? Date.now();
   }
 
   let wireProtocolFromOld: string | null = null;
-  try {
-    const oldWire = await readFile(join(input.sourceSessionDir, 'wire.jsonl'), 'utf-8');
-    const firstLine = oldWire.split(/\r?\n/)[0];
-    if (firstLine !== undefined && firstLine.length > 0) {
-      const parsed: unknown = JSON.parse(firstLine);
-      if (
-        parsed !== null &&
-        typeof parsed === 'object' &&
-        typeof (parsed as { protocol_version?: unknown }).protocol_version === 'string'
-      ) {
-        wireProtocolFromOld = (parsed as { protocol_version: string }).protocol_version;
+  if (oldWireText !== undefined) {
+    try {
+      const firstLine = oldWireText.split(/\r?\n/)[0];
+      if (firstLine !== undefined && firstLine.length > 0) {
+        const parsed: unknown = JSON.parse(firstLine);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          typeof (parsed as { protocol_version?: unknown }).protocol_version === 'string'
+        ) {
+          wireProtocolFromOld = (parsed as { protocol_version: string }).protocol_version;
+        }
       }
+    } catch {
+      // ignore a corrupt metadata line; display extraction already skips
+      // malformed records independently.
     }
-  } catch {
-    // ignore
   }
 
   try {
     await mkdir(targetDir, { recursive: true, mode: 0o700 });
-    await writeMainAgentWire(targetDir, { createdAtMs, messages });
+    const subagents =
+      input.source.sessionDir === undefined
+        ? []
+        : await migrateLegacySubagents(input.source.sessionDir, targetDir);
+    await writeMainAgentWire(targetDir, {
+      createdAtMs,
+      messages,
+      lastUsageTokenCount: extractLastUsageTokenCount(contextLines),
+      todoItems: readTodoItems(oldState.todos),
+      subagentTasks: subagents.map(buildSubagentTaskRecords),
+    });
     await writeSessionState(targetDir, {
       oldState,
+      sessionId: `ses_${input.source.uuid}`,
+      workdirPath: input.workdirPath,
       lastUserPrompt,
-      sourcePath: input.sourceSessionDir,
-      oldSessionUuid: input.oldSessionUuid,
+      lastTurnReason: messages.some((m) => m.role === 'assistant') ? 'completed' : undefined,
+      sourcePath: input.source.sessionDir ?? input.source.contextPath ?? '',
+      oldSessionUuid: input.source.uuid,
       wireProtocolFromOld,
       createdAtMs,
+      subagentIds: subagents.map((s) => s.agentId),
     });
   } catch (error) {
     // A partially-written targetDir would trip the conflict guard on re-run
@@ -151,6 +178,24 @@ export async function migrateOneSession(input: MigrateOneInput): Promise<Migrate
   await applyOriginalMtime(targetDir, createdAtMs);
 
   return { outcome: 'migrated', targetDir };
+}
+
+async function readSourceMtime(source: LegacySessionRef): Promise<number | undefined> {
+  if (source.sessionDir !== undefined) {
+    try {
+      return Math.floor((await stat(join(source.sessionDir, 'wire.jsonl'))).mtimeMs);
+    } catch {
+      // fall through to the context payload's mtime
+    }
+  }
+  if (source.contextPath !== undefined) {
+    try {
+      return Math.floor((await stat(source.contextPath)).mtimeMs);
+    } catch {
+      // fall through
+    }
+  }
+  return undefined;
 }
 
 /**

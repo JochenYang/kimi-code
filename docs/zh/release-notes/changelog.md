@@ -6,6 +6,826 @@ outline: 2
 
 本页记录 Kimi Code CLI 每个版本的变更内容。
 
+## 2.1.1（2026-09-24）
+
+### 优化
+
+- 配置文件与工作区文件的监听默认恢复为开启。如需保持关闭，可将 `[watch] enabled` 设为 `false` 或设置 `KIMI_CODE_WATCH=0`，详见 [`watch`](../configuration/config-files.md#watch)。
+
+### 修复
+
+- 回退 2.1.0 中部分过于严格的防御性改动。
+
+## 2.1.0（2026-09-23）
+
+### 新功能
+
+- 新增实验性全屏模式开关，可在 `/settings` 的 TUI mode 设置中开启，或在 `~/.kimi-code/tui.toml` 中设置 `tui_mode = "fullscreen"`，重启 Kimi Code 后生效。
+- 全屏模式下，点击折叠块即可展开或收起。
+- 全屏界面新增可点击的 "Jump to bottom" 指示器。
+
+### 优化
+
+- 缩短 CLI 启动时间并降低内存占用。
+- 默认关闭对配置文件和工作区文件的监听，如需开启可将 `[watch] enabled` 设为 `true` 或设置 `KIMI_CODE_WATCH=1`，详见 [`watch`](../configuration/config-files.md#watch)。
+
+### 修复
+
+- 加强工作区安全限制：文件工具无法再通过符号链接访问工作目录外的文件，项目本地配置仅在工作区受信任后生效，后台 git 操作不再执行仓库 git 配置中的命令，并拒绝解析结果为 home 目录或文件系统根目录的附加目录。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 2.0.2（2026-09-19）
+
+### 优化
+
+- 优化系统提示词：Agent 不再假设当前工作目录就是项目根目录。
+
+### 修复
+
+- 修复切换到上下文窗口更小的模型后 compaction 失败的问题。
+- 修复恢复会话后新消息偶尔出现在对话中旧位置的问题。
+- 修复 Agent 运行期间发送的消息有时在聊天中重复显示的问题。
+- web：改进交互体验并修复已知问题。
+
+## 2.0.1（2026-09-18）
+
+### 优化
+
+- 移除系统提示词中禁止访问工作目录以外所有文件的规则。
+- 供应商可通过 `config.toml` 中的 [`api_key_env`](../configuration/providers.md) 从指定的环境变量读取 API 密钥。
+- 工作区文件监听不再无上限地扫描项目根目录，并新增 `[watch] enabled` 配置与 `KIMI_CODE_WATCH` 环境变量，可完全关闭文件监听，详见 [`watch`](../configuration/config-files.md#watch)。
+- 「必要时询问」权限模式下，无法静态分析的 bash 命令不再触发审批请求。
+- `kimi install-app` 子命令更名为 `kimi install-desktop`，旧名称仍作为隐藏别名可用。
+
+### 修复
+
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 2.0.0（2026-09-17）
+
+### 新功能
+
+- 新增 `/desktop` 斜杠命令（别名 `/install-desktop`）与 `kimi install-app` 子命令。
+- Mermaid 代码块现在会在终端中渲染为图表；可在 `/settings` → Mermaid diagrams 中关闭，或在 tui.toml 的 `[markdown]` 配置段中设置 `mermaid = "off"`。
+
+### 优化
+
+- 内置浏览器插件更名为 "Kimi Browser Extension"，插件面板、插件市场与文档中的名称同步更新。
+
+### 修复
+
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.43.1（2026-09-15）
+
+### 新功能
+
+- Linux X11 环境新增原生剪贴板支持，从终端界面复制内容不再依赖终端的 OSC 52 能力。
+
+### 优化
+
+- 减少同时运行大量 subagent 的会话中的事件循环卡顿与 GC 开销。
+
+### 修复
+
+- 修复在 subagent 运行时按 `Ctrl-C` 会直接退出整个 CLI 的问题，现在只会中断正在运行的 subagent。
+- 修复大型 agent swarm 运行时渲染逐轮变慢的问题。
+- 修复 subagent 运行结束后内存未释放的问题。
+- 修复 tower 模式将新生成的 agent 误识别为历史会话 roster 条目的问题。
+- 修复全局搜索在索引更新前仍会返回已删除会话的问题。
+- 修复折行 markdown 表格中的链接颜色错误，以及 `@` 文件补全的排序问题。
+
+## 0.43.0（2026-09-14）
+
+### 新功能
+
+- Web 版会话的 AI 标题功能默认开启：首轮对话后自动生成标题，并可在重命名输入框中重新生成。
+- 会话选择器中可删除会话：在目标会话上按 `Ctrl-X`，再按 `y` 确认。
+- `kimi upgrade`（别名 `kimi update`）新增 `-y, --yes` 选项，跳过确认提示直接安装更新。
+- 新增 `loop_control.compaction_max_attempts` 配置项，可设置压缩请求失败后的最大总尝试次数（默认 5 次），详见 [`loop_control`](../configuration/config-files.md#loop_control)。
+
+### 优化
+
+- 仅作用于 `/tmp` 或 `/temp` 路径的 `rm -rf` 命令不再弹出确认提示。
+- 引导消息现在可以打断对后台任务的等待。
+- 目标模式的时间预算不再计入会话关闭期间的时间，并取消 24 小时上限。
+- 新增 `KIMI_CODE_PERMISSION_MODE_REMINDER` 环境变量：设为 `0` 后不再向模型上下文注入自动权限模式提醒。
+
+### 修复
+
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.42.0（2026-09-09）
+
+### 新功能
+
+- Remote Control 由实验性转为正式，无需再设置 `KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL` 实验开关。详见 [Remote Control](https://moonshotai.github.io/kimi-code/zh/guides/remote-control.html)。
+- Web 版支持从会话行的右键菜单永久删除会话，删除前会要求确认。
+- `/btw` 侧边聊天的 subagent 新增只读工具。
+- Web 版输入框新增可排序的媒体预览栏，可在文本中按需引用图片和视频，排队与发送后预览仍然保留。
+- 模型由 Kimi 提供时，支持在提示词附件与 `ReadMediaFile` 中使用 HEIC、HEIF 和 BMP 图片。
+
+### 优化
+
+- 消息记录中已完成的工具调用现折叠为标题加一行结果摘要：短输出完整展示，隐藏内容以 `N more lines`、`+N more` 计数并按 `Ctrl-O` 展开，页脚会在可用时提示。
+- 符合条件的用户的默认思考强度升级为推荐级别。
+- 子 Agent 模型池（`[secondary_model]`）现已始终开启，实验开关与 `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL` 退出选项已移除。
+- `Read` 新增可配置的字符上限，长行文件可续读，输出不再被反复截断。详见 [`read`](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#read)。
+- minidb 会话索引读模型与全局搜索 worker 现已始终开启，实验开关由 `[database]` 配置段与 `KIMI_CODE_PERSISTENCE_MINIDB_READMODEL` / `KIMI_CODE_SEARCH_WORKER` 环境变量取代。详见 [`database`](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#database)。
+
+### 修复
+
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.41.0（2026-09-04）
+
+### 新功能
+
+- Web 版新增 tower 多智能体协作模式（实验功能），可通过 `/tower` 命令或输入框加号菜单开启，`/tower <base-branch>` 可指定基准分支。
+- Web 版新增划词标注：在消息、文件预览、diff 与每轮改动面板或终端中选中文字，即可添加评论或引用到对话。
+- CLI 中新增会话评分提示，适时在输入框上方邀请为本次会话打分。
+
+### 优化
+
+- 自动权限模式不再拦截危险命令和无法静态分析的命令。
+- 自动压缩前提醒模型关注上下文预算，压缩后指引其查阅会话事件日志获取精确细节。
+- Web 版三档权限模式更名为「始终询问 / 必要时询问 / 完全自动」并更新描述；切换到「必要时询问」或「完全自动」权限模式后，提示该模式下文件可能被直接修改或删除。
+- Web 版 Esc 不再关闭右侧详情面板。
+- Web 版右侧面板中的 Bash 命令改为终端样式。
+- 后台提问的回答直接送达 Agent，不再经输出文件中转。
+- 子 Agent 的最终回复较短（200 字符以内）时不再被要求扩写。
+
+### 修复
+
+- 修复 `kimi -p` 在出错或收到终止信号退出时丢失会话记录的问题。
+- 修复 `kimi -p` 忽略 `KIMI_DISABLE_TELEMETRY` 环境变量的问题。
+- 修复 tower 模式（实验）在 config.toml 中通过 `[experimental] tower = true` 启用时不生效的问题；`/tower` 现可在非 git 仓库目录使用；启用失败时报错会指明具体原因。
+- 修复后台提问在 Agent 回合结束即被取消的问题。
+- 修复会话在新进程重开后无法按 agent id 恢复子 Agent 的问题；恢复的子 Agent 遵循当前权限模式。
+- 修复一轮中多次编辑同一文件时，每轮改动预览出现从未真实存在的增删行且行数统计不准的问题；改动卡片现只展示精确统计。
+- 修复设置中默认思考强度无法设为最高档（Max）的问题。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.40.1（2026-09-02）
+
+### 修复
+
+- 修复 kimi-cli 迁移完成或关闭后仍重复弹出迁移提示的问题。
+
+## 0.40.0（2026-09-02）
+
+### 新功能
+
+- Web 版设置新增「插件」面板：可浏览插件市场并安装、启停、移除插件。
+- 支持在一条消息中同时激活多个技能。
+- 新增 `kimi session list` 命令，可在命令行直接列出会话。
+- Tower 模式（实验性）行为调整：agent 不再自行进入，需用 `/tower on` 或 `/tower <base-branch>` 显式开启。
+- 子代理设置（`[secondary_model]`）功能由实验性转为正式。
+- 新增危险命令护栏：Auto 模式直接拦截 shutdown、reboot、rm -rf 等危险命令，Manual 与 YOLO 模式执行前必定询问；可用 `[permission] dangerous_command_guard = false` 或 `KIMI_CODE_DANGEROUS_COMMAND_GUARD=false` 关闭。
+
+### 优化
+
+- 更新配置时完整保留 config.toml 的注释、键顺序与格式。
+- Bash 工具的 cwd 参数不再限制在工作区内。
+- 工作区信任弹窗默认选中「Trust this folder」。
+- `kimi acp` 子命令不再识别 `KIMI_CODE_LEGACY_FLAG`，始终运行在默认 agent 引擎。
+- Web 版 Diff 面板新增代码折行开关，并精简了面板头部。
+
+### 修复
+
+- 修复实验开关优先级：config.toml 中显式设为 `false` 的 `[experimental]` 条目现在稳定优先于 `KIMI_CODE_EXPERIMENTAL_FLAG` 总开关（单项 `KIMI_CODE_EXPERIMENTAL_<NAME>` 变量仍覆盖两者）。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.39.1（2026-08-28）
+
+### 修复
+
+- 修复在一个会话中切换权限模式会改动所有会话的问题，权限模式现按会话独立生效。
+- 修复登录相关问题
+- 修复点击输入框占位提示后，输入法或键盘首个字符被吞的问题
+- 修复新会话中附件上传完成后仍显示"上传中"的问题
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.39.0（2026-08-27）
+
+### 新功能
+
+- 新增实验性远程控制功能：可远程访问本地的 web 会话，设置 `KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL=1` 后运行 `kimi rc`、`kimi web --remote-control` 或 `/remote-control` 启动。
+- 新增实验性 tower 多 Agent 编排模式：设置 `KIMI_CODE_EXPERIMENTAL_TOWER=1` 后运行 `/tower on` 和 `/tower <objective>` 启动。
+- subagent 与 swarm 工具新增可选 `fork` 参数，子 Agent 以调用方当前对话历史的快照启动；设置 `KIMI_CODE_EXPERIMENTAL_SUBAGENT_FORK=1` 或在 `config.toml` 的 `[experimental]` 下写 `subagent_fork = true` 启用。
+- web: 运行卡片新增 "转到后台" 按钮，可把正在前台运行的 Bash 命令或子 Agent 转为后台运行。
+- web: 移动端会话列表新增平铺/按工作区分组的切换标签。
+- 内置插件市场新增 Tencent CloudBase 插件，通过 `/plugins` 安装。
+- 新增 `[swarm] timeout_ms` 配置项（或环境变量 `KIMI_CODE_SWARM_TIMEOUT_MS`）。
+
+### 优化
+
+- web: 右侧边栏重构为多标签面板。
+- web: 优化输入框交互，包括文件、文件夹和媒体附件的展示。
+- web: 优化移动端 UI 样式。
+
+### 修复
+
+- 修复 Windows 上文件工具与 Shell 工作目录无法解析 Git Bash 路径（如 /c/Users、/tmp）的问题。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.38.0（2026-08-20）
+
+### 新功能
+
+- 支持 kimi.ai 与 kimi.com 两种 OAuth 登录方式。
+- 新增 WaitFor 工具：Agent 可以在当前轮次内等待后台任务完成，无需结束轮次后再次被唤起。
+- 官方 Kimi Datasource 插件新增 13 个数据源：中国政府数据（NDA/NBS）与标准（GB/HB/DB/TT）、八个国际组织数据集（WHO、FAO、UNSD、ECB、Eurostat、UNICEF、OECD、FRED）、新华财经和财新。在 /plugins 的 Official 标签页中更新插件。
+- web: 聊天头部的更多菜单新增置顶操作。
+
+### 优化
+
+- Edit 和 Write 现在要求先读取已存在的文件再进行修改。
+<!-- - 子 Agent 默认不再派生自己的子 Agent；自定义 Agent 配置仍可显式允许。 -->
+- 折叠过长的 `!` Shell 命令输出，避免刷屏；按 ctrl+o 可与工具输出一起展开或折叠。
+
+### 修复
+
+- 修复 config.toml 在存在语法错误或在应用外被编辑时条目丢失的问题。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.37.2（2026-08-19）
+
+### 优化
+
+- web: 设置页新增 「实验室」标签页，上线「多标签侧边栏开关」功能；开启后侧边栏显示 Open / Done / Workspaces 标签页。
+- 做了若干细节优化和内部改进。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.37.1（2026-08-18）
+
+### 修复
+
+- 修复粘贴的图片和视频无法发送给模型的问题。
+
+## 0.37.0（2026-08-18）
+
+### 新功能
+
+- 支持在单条提示词中激活多个 skill：在空白后输入 `/` 即可插入 skill 标记。
+- Windows 原生（单文件）CLI 现支持自动更新。
+- web: 侧边栏新增 Open / Done / Workspaces 标签页，会话可标记为 Done。
+- web: 新增会话管理页面。
+
+### 优化
+
+- Agent 忙碌时输入的 skill 斜杠命令现在会排队执行，不再直接拒绝。
+- web: 聊天消息中 @提及的文件、文件夹和 skill 现在渲染为图标胶囊。
+- web: 浏览器标签页标题现在显示当前工作区目录名。
+- web: 搜索对话框现在支持搜索工作区，选中结果后会展开侧边栏并滚动定位到该条目。
+- web: Subagent 面板更名为 "Background Agent"。
+- 输入的 `/goal` 目标超过 4000 字符限制时现在会给出警告，且被拒绝时保留已输入的内容。
+
+### 修复
+
+- 修复 Gemini 工具调用会话后续请求失败的问题。
+- web: 修复 macOS 上输入框中 Ctrl+K 误打开会话搜索的问题，会话搜索现仅响应 Cmd+K。
+- web: 修复 Background Agent 面板显示数量和状态不对的问题。
+- web: 修复把复制的文件夹粘贴进输入框会导致上传报连接错误的问题，现在文件夹会被直接跳过。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.36.1（2026-08-14）
+
+### 新功能
+
+- web: AI 自动生成会话标题（实验性）。默认关闭，设置 `KIMI_CODE_EXPERIMENTAL_AUTO_SESSION_TITLE=1`（或实验总开关 `KIMI_CODE_EXPERIMENTAL_FLAG=1`）开启。
+
+### 优化
+
+- web: 优化输入框的 Plan、Goal、Swarm 开关，现收进了输入框旁的 + 号菜单。
+
+### 修复
+
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.36.0（2026-08-13）
+
+### 新功能
+
+- 实验性的子 Agent 模型配置升级为模型池：现在可以在 `[secondary_model]` 中配置一组带描述的候选模型，由主 Agent 每次派生时按任务挑选。
+
+  启动前设置 `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`（或实验总开关 `KIMI_CODE_EXPERIMENTAL_FLAG=1`）即可启用。
+
+  推荐用法：
+
+  - 极简用法：在 TUI 中运行 `/secondary-model` 选择，或在 `config.toml` 中写一行 `default_model`，让所有子 Agent 默认跑同一个模型；再加 `force = true` 可彻底固定该选择，主 Agent 无法改选。
+  - 配置命名模型池，并为每个别名写一句适用场景的描述——描述会展示给主 Agent 作为挑选依据：
+
+    ```toml
+    [secondary_model]
+    default_model = "kimi-code/kimi-for-coding-highspeed"
+    [secondary_model.models]
+    "kimi-code/kimi-for-coding-highspeed" = "快速、便宜，适合日常重构、代码解释和小改动。"
+    "kimi-code/k3" = "擅长复杂推理与深度调试，难题选它。"
+    ```
+
+  详见 [子 Agent 模型池文档](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#subagent-模型池)。
+- 新增实验性全屏 TUI 模式，设置 `KIMI_CODE_TUI_FULL_SCREEN=1` 环境变量即可启用。
+- TUI 支持渲染 LaTeX 数学公式（`$…$` 与 `$$…$$`），消息中的公式会显示为 Unicode 公式。
+
+### 修复
+
+- 修复未信任工作区可在信任确认前植入同名 `fd`/`stty` 可执行文件的风险；信任提示现在展示项目 MCP 的启动目标，并默认拒绝信任。
+- 修复在严格的 OpenAI 兼容供应商（如 DeepSeek）下，模型思考阶段打断轮次后，后续每轮请求都报 400 错误的问题。
+- 修复 API 请求失败自动重试期间按 Ctrl+C 无反应的问题。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.35.0（2026-08-12）
+
+### 新功能
+
+- 内置插件市场新增 Modern Web Guidance 插件，通过 `/plugins` 选择 Modern Web Guidance 安装。
+- `/tasks` 面板现实时展示后台子 Agent 的工作进度。
+
+### 修复
+
+- 修复 coder 子 Agent 默认可继续派生子 Agent 的问题。
+- 修复压缩后 token 数显示偏低的问题，现在与会话中看到的数字一致。
+- 修复 Windows 上的两处二进制植入风险。
+- 修复了一些已知问题，并做了若干细节优化。更详细的变更记录见 [GitHub](https://github.com/MoonshotAI/kimi-code/blob/main/apps/kimi-code/CHANGELOG.md)。
+
+## 0.34.0（2026-08-06）
+
+### 新功能
+
+- web: 侧边栏会话列表新增平铺视图。
+- Kimi Computer Use 插件新增 Windows x64 支持，通过 `/plugins` 安装。
+- 会话空闲过久后恢复或发送消息时，现将会弹出缓存过期提醒。将 [cache_expiry_hint](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#tui-toml) 设为 `false` 可关闭。
+
+### 优化
+
+- web: 子 Agent 任务显示所用模型与思考等级。
+- web: 模型请求失败时会话内保留失败卡片，可一键恢复。
+- web: 自动重试期间工作状态显示重试进度（第 N/M 次）。
+- 安装 Kimi WebBridge 后现在会显示浏览器扩展链接与激活步骤。
+
+### 修复
+
+- 修复无法读取 UTF-16 LE/BE 文本文件（有无 BOM 均可）的问题。
+- web: 修复附件随技能命令发送时被丢弃的问题。
+- web: 修复模型较多时模型选择器溢出屏幕的问题。
+- web: 修复 Windows 上路径含空格时打开 Documents 文件夹而非目标文件的问题。
+- web: 修复新会话以技能命令开始时思考等级被重置为默认值的问题。
+- web: 修复手动取消的会话在侧边栏被错误标记的问题，现在仅在上一回合失败时显示。
+- web: 修复重命名会话时输入法组合中 Enter、Esc 误触发的问题。
+- web: 修复重命名时拖动选择文本会移动整个列表项的问题。
+- web: 修复计划审批对话框展开时后台任务与待办标签跳到窗口顶部的问题。
+- web: 修复变更文件摘要卡片 "show less" 按钮箭头方向错误。
+- 修复 `kimi -p` 未等待后台任务与子 Agent 完成就退出的问题。
+- `/feedback` 不再受当前模型限制，所有已登录用户可用；未登录用户显示注册页与 GitHub Issues 链接。
+- 修复移除 MCP 服务会破坏进行中会话的问题：工具保留但调用返回移除提示。
+- 修复服务器重启后丢失回合结束状态的问题，会话列表与恢复的会话现在能正确标记失败的回合。
+- 修复恢复的会话将后台任务完成通知显示为原始协议文本而非状态卡片的问题。
+
+## 0.33.0（2026-08-05）
+
+### 新功能
+
+- `/plugins` 市场新增 Kimi Computer Use 与 Kimi WebBridge 官方内置插件，安装时自动配置托管运行时，中断后可重试。
+- web: 支持在设置中添加和管理自定义供应商。
+- web: 侧边栏支持将会话置顶。
+- web: 会话标题支持设置 emoji。
+- web: 显示登录账号信息与套餐用量。
+- 新增 `/bug` 命令作为 `/feedback` 的别名，输入 `/bug` 即可提交反馈。
+
+### 优化
+
+- 启动时询问是否信任当前文件夹。
+- `/fork` 不再切换到分叉会话，当前会话与后台任务保持运行，分叉结果可在 `/sessions` 中查看。
+- web: 深度优化界面 UI/UX 并修复已知问题。
+- 交互式 TUI 启动时不再立即创建会话。
+- 插件市场的合作伙伴标签页更名为 Curated，并说明其内容为 Kimi 合作伙伴提供的第三方插件。
+
+### 修复
+
+- 修复 macOS 上技能目录文件过多时所有工具调用失败（spawn EBADF）的问题。
+- 修复 MCP OAuth 重新授权总是因 `Invalid redirect URI` 失败的问题，现会自动清理过期注册并重新发起。
+- 修复首条请求未等待 MCP 初始化完成的问题，界面仍可立即打开。
+- 修复 MCP 工具结果中 `structuredContent` 与 `_meta` 元数据被静默丢弃的问题，现已正确传递给模型。
+- 修复 `/plugins` 中内置能力的可用性与安装状态显示，更新时保留旧版 WebBridge 技能备份，并避免 Computer Use 更新导致 MCP 服务重复或断连。
+
+### 重构
+
+- CLI 各界面（交互式 TUI、`kimi -p`、`kimi acp` 等）默认运行在 agent-core-v2 引擎上；设置 `KIMI_CODE_LEGACY_FLAG=1` 可回退旧引擎。
+
+## 0.32.0（2026-08-04）
+
+### 新功能
+
+- 新增四个 hook 事件：`TurnStarted`、`UserPromptQueued`、`TaskStarted` 和 `SessionHeartbeat`。在 `config.toml` 的 `[[hooks]]` 下配置，详见 [Hooks](https://moonshotai.github.io/kimi-code/zh/customization/hooks.html)。
+
+### 优化
+
+- `[loop_control]` 两个配置键改名：`max_retries_per_step` → `max_attempts_per_step`、`max_steps_per_run` → `max_steps_per_turn`；旧键不再生效，启动时会有改名警告，详见 [loop_control](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#loop-control)。
+- 新增 `[token_counting]` 配置节：供应商不上报 token 用量时，可将上下文大小显示切换为本地估算，详见 [token_counting](https://moonshotai.github.io/kimi-code/zh/configuration/config-files.html#token-counting)。
+
+### 修复
+
+- 修复部分 OpenAI 兼容网关返回含冒号的工具调用 ID 时，交互式提问无法提交答案的问题。
+- 修复上下文自动压缩因请求过大反复重试直至失败的问题。
+- models.dev 目录不可达时回退到内置快照，离线或网络受限时也能导入已知第三方供应商。
+- 修复未配置模型时上下文窗口上限显示为 0 的问题，现回退到默认模型显示。
+- web: 修复深色模式下单色控件显示异常，聊天输入框圆角与设计系统对齐。
+- 修复 `/login` 已登录确认信息难以看清的问题，现以成功色显示。
+
+## 0.31.1（2026-07-31）
+
+### 优化
+
+- 减少 TUI 频繁的全屏重绘。
+- 按 Esc 中断回合时保留 Assistant 已生成的部分输出，并提醒模型上一回合是被主动中断的。
+- web: 各设置页面的权限模式按从严到宽排序，并修复状态面板与移动端设置中 yolo/auto 风险颜色颠倒的问题。
+- web: 代码块启用基于 Monaco 的高亮渲染，并修复回退渲染时行号重叠或错位的问题。
+
+### 修复
+
+- 修复启动 kimi web 时偶发的 “model is not configured” 错误。
+- web: 修复新会话显示思考等级（如 Max）但首条消息实际未开启思考的问题。
+- web: 修复新会话草稿状态下（发送首条消息前）@ 文件提及不可用的问题。
+- web: 修复 Markdown 渲染器升级后聊天代码块以 UI 字体、错误字号渲染的问题，加载回退与高亮块对齐。
+
+## 0.31.0（2026-07-30）
+
+### 新功能
+
+- TUI 支持 Markdown 定义的自定义 Agent。
+- 新增 /secondary_model 斜杠命令，用于配置子 Agent 使用的辅助模型（实验性功能，需先在 /experiments 中开启）。
+- 插件可贡献自定义 Agent，自动发现并可用于子 Agent 委派。
+- 插件可贡献系统提示词，通过 `kimi.plugin.json` 中的 `systemPrompt` 或 `systemPromptPath` 声明。
+
+### 修复
+
+- 移除 TaskOutput 工具的阻塞式 `block`/`timeout` 等待。
+- 修复会话元数据缓存早于 archived 标记时会话选择器缺少会话的问题。
+- 修复部分请求未能正确传递请求头的问题。
+
+## 0.30.0（2026-07-29）
+
+### 新功能
+
+- 新增可自定义的底部状态栏，可通过 `tui.toml` 中的 `[status_line]` 配置。
+
+### 优化
+
+- 安装会计入套餐额度的官方插件（如 Kimi Datasource）后，显示额度说明。
+- 会话中使用的官方插件有可用更新时显示提示，可运行 /plugins 更新。
+- 移除内置服务器文件上传的 50 MB 大小限制。
+
+### 修复
+
+- 修复账户额度或余额耗尽时静默重试约 3 分钟的问题，现在会立即报错。
+- 修复工具调用反复无效时无限重试的问题，现在会终止当前回合。
+- web: 修复代码块中行号乱码的问题。
+
+## 0.29.2（2026-07-27）
+
+### 修复
+
+- 修复目标执行在单轮达到步数上限（`loop_control.max_steps_per_turn`）后暂停的问题。
+- 修复目标运行期间发送的消息被拒绝的问题。
+- 修复 /undo 无法一致恢复对话历史、待办列表、计划模式和任务通知的问题。
+- web: 修复纯 HTTP 环境下复制选中聊天文本时，剪贴板被事件占位符覆盖的问题。
+
+## 0.29.1（2026-07-24）
+
+### 新功能
+
+- 支持在 `config.toml` 与环境变量中配置全局默认的 MCP 服务器超时时间。
+- 新增用于配置网页搜索与网页抓取服务的环境变量，无需 OAuth 登录。
+- 新增实验性的子 Agent 辅助模型绑定，支持按 Agent 设置模型偏好及仅对子 Agent 生效的模型覆盖。
+
+### 修复
+
+- 修复部分 OpenAI 兼容端点（如新版 vLLM）以其他字段名返回 reasoning 导致思考内容丢失的问题。
+
+## 0.29.0（2026-07-22）
+
+### 新功能
+
+- web: 支持 Markdown 文件定义 agent，声明 system prompt、名称、描述和工具权限。[查看文档](https://moonshotai.github.io/kimi-code/en/customization/agents.html#agent-file-format)
+- web: 可通过 SYSTEM.md 永久覆盖主 agent 的系统提示。[查看文档](https://moonshotai.github.io/kimi-code/en/customization/agents.html#overriding-the-main-agent-s-system-prompt-with-system-md)
+- web: 可通过 config.toml 在所有会话中统一启用/禁用工具。[查看文档](https://moonshotai.github.io/kimi-code/en/configuration/config-files.html#tools)
+- 附加到提示词的视频现在会随提示词一起送达模型，无需额外的工具轮次。
+- ACP 客户端现支持选择思考强度。
+- 新增 Agent 循环与后台任务限制的环境变量覆盖：`KIMI_LOOP_MAX_STEPS_PER_TURN`、`KIMI_LOOP_MAX_RETRIES_PER_STEP` 和 `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`。
+
+### 优化
+
+- 从 models.dev 目录导入更多供应商。
+- 提升 TUI 在长会话中的性能与恢复速度。
+- 当 MCP 服务器的某个工具被调用时，若连接已断开可自动重连，并自动重试一次该调用。
+- 移除代码预览与 Markdown 代码块语法高亮中的红色配色。
+- 在更新提示中为第三方安装来源增加使用官方安装器的提醒。
+
+### 修复
+
+- 修复内容过滤响应后，会话卡住并报 "message must not be empty" 错误的问题。
+- 修复被取消的模型请求被包装为可重试的供应商错误的问题。
+- 修复为不支持的模型提供思考强度选项的问题。
+- 修复环境变量覆盖值在环境变量设置期间被持久化到 config.toml 的问题。
+- 将会话提示词缓存键发送给 OpenAI 与 OpenAI Responses 供应商。
+- 修复当供应商没有文件上传通道时 `ReadMediaFile` 处理视频失败的问题。
+- 修复恢复会话时目标模式续行提示词泄漏到对话记录中的问题。
+- web: 在透明图片下方显示棋盘格画布。
+- 移除定时任务工具描述中对不存在的 `kimi resume` 命令的引用。
+
+## 0.28.1（2026-07-20）
+
+### 新功能
+
+- ACP 会话现支持使用已配置的非 OAuth 模型凭据启动，无需再在终端登录。
+
+### 优化
+
+- `kimi web` 服务器改为全程前台运行：`/web` 斜杠命令现在总是启动新服务器，`kimi web kill` 与 `kimi web ps` 子命令已移除，前台服务器按 Ctrl+C 即可停止。`kimi server kill` 保留为废弃回退，仅能停止 0.28.0 之前版本启动的服务器。
+
+### 修复
+
+- 修复权限模式切换对已在运行的子 Agent 不生效的问题。
+
+## 0.28.0（2026-07-20）
+
+### 新功能
+
+- **破坏性变更：** 
+  - `kimi server` 命令树已被废弃，请使用 `kimi web` 代替。
+  - `kimi web` 现在在当前终端前台运行并打开浏览器，按 Ctrl+C 停止。
+
+### 优化
+
+- 思考强度仅持久化低于模型最高档（max）的等级。
+- web: 模型切换器新增提示：切换模型或思考强度会使已有提示词缓存失效。
+
+### 修复
+
+- 修正 YOLO 与 Auto 权限模式的描述：YOLO 会自动批准工具操作，但 Agent 仍可能提问；Auto 完全自主，不会提问。
+- 修复 web 后端在加载 AGENTS.md 和读取文件时忽略符号链接的问题。
+
+## 0.27.0（2026-07-17）
+
+### 新功能
+
+- 新增 `/copy` 斜杠命令，可将上一条助手消息复制到剪贴板。
+- 使用 API key 调用 Kimi 编程模型时，现在会自动拉取最新模型列表。
+
+### 优化
+
+- OAuth 连接失败时现在会显示底层网络原因（DNS、连接被拒、TLS、超时），不再是笼统的 `fetch failed`。
+
+### 修复
+
+- 修复打断模型回复后请求被反复拒绝的问题。
+- 修复内置 URL 抓取工具的网络防护缺陷：恶意构造的域名与重定向链无法再访问回环地址或内网服务。
+- web: 修复通过网络访问 web UI 时 LaTeX 公式渲染错乱重叠的问题。
+- web: 修复重新打开会话时，排队消息会静默重发此前已上传文件的问题。
+- web: 按模型分别记忆思考等级，修复模型不支持已存等级时选择器空白卡死的问题。
+- web: 修复 Windows 下同一文件夹以不同路径写法打开时出现重复工作区分组的问题，现在统一归入单个分组。
+- 修复 web 后端忽略以符号链接形式安装的 AGENTS.md 文件的问题。
+- 修复 /btw 面板打开时，按 Esc 或 Ctrl+C 会取消 compaction 而不是关闭面板的问题。
+- 修复纯空白思考内容在对话记录中渲染成空行的问题。
+- 修复对同一会话重复执行 /export-debug-zip 或 kimi export 会覆盖上一份压缩包的问题；文件名现包含时间戳。
+
+## 0.26.0（2026-07-16）Say hi to the BIIIG DAY!
+
+### 优化
+
+- 扩展 coder 子 Agent 的工具集：新增后台任务、待办列表、Plan 模式、Skill 调用与嵌套 Agent 能力，与主 Agent 对齐。
+- `/model` 与 `/effort` 选择器现在会提示切换会使已有提示词缓存失效，并建议使用 `/new` 以避免额外 token 开销。
+- web: 打开模型选择器时刷新所有供应商的模型目录，新上线的模型现在总能显示。
+- 优化上下文用量显示的单位格式。
+
+### 修复
+
+- 修复恢复的会话没有新活动却被标记为刚更新、跳到会话列表顶部的问题。
+- 修复上下文大小指示器低估模型实际上下文用量的问题。
+- 修复经 Anthropic 协议接入的 Kimi 供应商模型错误显示思考强度选项的问题。
+- 修复 OpenAI 兼容（chat completions）供应商上显式关闭思考不生效的问题。
+- 用户停止任务时现在会向模型报告，其他停止原因也会保留在模型上下文中。
+- 修复后台子 Agent 被手动停止后立即恢复时可能因竞争报 `"already running"` 错误的问题。
+- Anthropic 兼容与 Kimi 的 preserved-thinking 端点现在原样回放空思考内容，不再替换为占位空格。
+- 旧版迁移在多个 Kimi 主目录之间保持幂等，损坏或无法映射的会话现在会明确报告，不再静默跳过。
+- web: 修复侧边栏调整宽度的拖拽手柄被聊天输入框背景遮挡的问题。
+
+## 0.25.0（2026-07-16）
+
+### 新功能
+
+- web: 聊天支持附加任意类型文件，可直接将文件拖放到窗口任意位置；发送的文件、图片、视频都会以附件标签显示在消息气泡中。
+
+### 优化
+
+- web: 模型请求失败时展示完整诊断信息。
+- 应用 Anthropic 官方 effort 配置，未知模型回退到 128k 输出上限。
+
+### 修复
+
+- 修复 Web 服务器 bearer token 校验可被百分号编码的 API 路径绕过、导致所有 API 路由可被未认证访问的问题。
+- 修复会话文件系统 API 可跟随指向工作区外的符号链接、导致宿主机文件被越权访问的问题。
+- web: 会话活动指示器现与 Agent 实际工作保持同步；修复会话激活竞争或 LLM 重试后流式内容重复的问题。
+- 修复 Anthropic 兼容供应商中自定义命名模型新会话思考强度被错误关闭、且 ACP 客户端不显示思考强度控件的问题。
+- Anthropic 兼容模型现在正确遵循 `adaptive_thinking = false`，请求中不再携带 effort 参数。
+- web: 修复服务器绑定非回环地址时 CSP 阻止 Web UI 主题初始化脚本与内置字体加载的问题。
+- 修复工作区目录通过符号链接给出时会话创建失败的问题。
+- 修复剪贴板图片读取失败导致 CLI 意外退出的问题，现在会回退为粘贴文本。
+- web: 修复已完成的后台子 Agent 在会话重新加载后丢失最终输出的问题。
+- web: 修复开发构建中 Enter 键无法确认模态对话框的问题。
+- web: 修复流式输出期间后台子 Agent 在 agents dock 面板中显示为两行相同记录的问题。
+- 修复 CLI 意外退出时诊断日志缺少实际错误信息的问题。
+
+## 0.24.2（2026-07-15）
+
+### 新功能
+
+- 新增内置 `/check-kimi-code-docs` Skill，自动基于官方文档回答 Kimi Code 产品问题并附来源链接。
+
+### 优化
+
+- 对齐 `kimi -p` 在各引擎的行为：`print_background_mode` 与 `print_max_turns` 生效，`/goal` 会运行到目标结束。
+- `kimi -p` 默认在后台任务未完成时保持运行，等待与轮次实际上不设上限，并把完成结果反馈给主 Agent。如需恢复旧的一轮后退出，可设置 `print_background_mode = "exit"` 或 `"drain"`。
+- `kimi -p` 后台任务和子 Agent 默认不再超时（交互模式不变）；如需恢复限制，可设置 `[background] bash_task_timeout_s` 或 `[subagent] timeout_ms`。
+- 子 Agent 超时统一默认为 2 小时，可通过 `[subagent] timeout_ms` 或 `KIMI_SUBAGENT_TIMEOUT_MS` 覆盖。
+- 每步 LLM 重试上限从 3 次提高到 10 次，供应商临时失败（429 / 过载）会在轮次失败前自动重试；可通过 `loop_control.max_retries_per_step` 调整。
+- 工作区现在自动保持同步：新会话自动注册，缺失工作区启动时补全，已移除的不再重现。
+- `kimi web` 现在会记录失败请求和关键操作，便于诊断服务问题。
+- web: AgentSwarm 卡片在子 Agent 运行时保持展开。
+- web: 最小化的计划审阅与问题卡片改用向上的 chevron 作为展开图标。
+
+### 修复
+
+- web: 修复 iOS 移动端布局问题，包括 composer、安全区和 toast。
+- 修复新会话无法在旧版 CLI 中打开的问题。
+- 修复子 Agent 完成时过早触发完成通知的问题。
+- 修复 Web UI 显示错误 CLI 版本的问题。
+- 修复 Gemini 模型的 tool call id 跨轮次冲突，导致 swarm 运行被合并到一张卡片的问题。
+- web: 操作（如停止或归档会话）失败时现在会展示服务器错误详情。
+- web: 修复标签页切换到后台后长响应卡住的问题。
+- web: 修复纯 HTTP 下代码块复制按钮不可用的问题。
+- web: 修复会话列表刷新失败时会话被清空的问题。
+- web: 修复刷新页面后 AgentSwarm 成员列表丢失的问题。
+- web: 修复首条消息为斜杠命令时会话标题不生成的问题。
+- web: 修复重新加载会话后消息时间显示为会话创建时间的问题。
+- 修复多个 `/goal` 模式问题，涉及预算与轮次上限、暂停与恢复、崩溃恢复、最终状态消息和无效的持久化目标记录。
+- 修复被替换目标仍可能影响新目标预算的问题，并统一拒绝无效的子 Agent 目标。
+- 修正目标无法暂停或恢复时显示的引导文案。
+
+### 重构
+
+- 将动态工具加载能力从 `select_tools` 重命名为 `dynamically_loaded_tools`，行为不变。
+
+## 0.24.1（2026-07-14）
+
+### 修复
+
+- 修复 preserved-thinking 历史包含空推理步骤时，Kimi 会话卡住的问题。
+- 修复模型供应商在会话启动后才就绪时，内置工具不可用的问题。
+- 修复思考强度（thinking effort）路由问题：非 Kimi 供应商现在保留配置值，Kimi 模型会校验运行时选择，并在模型解析时安全回退。
+- web: 对齐 Web 端与 CLI 的思考级别处理：所选级别原样提交，不再被静默降级；未选择或切换模型时回退到模型自身的默认级别；显式选择会保存为默认值并被新会话继承。
+- 修复目标完成摘要丢失的问题；步骤中断事件中的无类型 LLM 错误不再显示内部错误码前缀。
+
+### 优化
+
+- web: 模型标签只显示级别名称（如 Max），不再显示 "thinking: max"。
+
+## 0.24.0（2026-07-14）
+
+### 新功能
+
+- web: 新增会话导出功能，运行 `/export` 或在会话的更多菜单中选择「导出会话」，可将会话与故障排查日志打包为 ZIP 下载（上限 64 MiB）。
+- 前台 `Bash` 命令超时时不再被终止，而是转入后台继续运行，完成后回报结果。在 `config.toml` 的 `[background]` 下设置 `bash_auto_background_on_timeout = false` 可恢复超时即终止的行为。
+
+### 优化
+
+- web: 优化 `/goal` 模式控件，新增动画条交互、预算感知进度条，以及符合设计系统的取消确认。
+- 优化会话关闭流程：先请求后台任务停止并留出宽限时间，再强制停止仍未退出的任务。
+- 重写重复工具调用提醒，引导 Agent 采取其他动作，而不是禁止调用。
+- 优化 `TaskOutput` 的工具提示词，避免 Agent 阻塞等待后台任务。
+- 请求供应商 registry（api.json）和模型目录时携带 kimi-code-cli 的 User-Agent，便于 registry 识别客户端版本。
+- Skill 解析失败时输出警告，不再静默丢弃；并修复 Skill 扫描结果的报告遗漏。
+
+### 修复
+
+- 修复超大图片读取污染会话的问题；已因请求过大报错的会话现在会自动恢复。
+- 修复会话 fork 丢失内容的问题：fork 出的会话现在保留媒体附件、plan 文件、后台任务输出和 cron 任务，fork 失败也不再留下残缺副本。
+- web: 修复重新打开、重连或重新同步会话时的多处渲染异常，包括上下文用量指示器归零、User 消息气泡重复，以及多步轮次中的文本重复。
+- web: 修复通过非 localhost 地址连接服务器时，已上传的图片无法显示的问题。
+- web: 修复从 `/goal` 控件恢复被阻塞的目标后，目标无法继续运行的问题。
+- web: 修复子 Agent 仍在运行时刷新页面，AgentSwarm 成员列表消失的问题。
+- web: 修复会话目标活跃时刷新页面，目标卡片消失的问题。
+- web: 修复工作区选择器菜单宽度过窄、无法容纳内容的问题。
+- web: 修复子 Agent 的瞬时速率限制被暴露为会话错误的问题，现在会自动恢复。
+- 修复 Windows 上 git 来自原生 MSYS2 工具链（ucrt64/clang64/clangarm64）时 Bash 自动检测失败的问题。
+- 修复登录过程中供应商配置发生变更时，OAuth 登录在浏览器授权完成后卡住的问题。
+- 修复 OAuth 托管模型在 token 刷新后持续返回 401 时误显示重新登录提示的问题，现在会展示供应商的实际拒绝原因。
+- 修复未配置 `base_url` 的供应商被拒绝的问题：anthropic/openai 等协议供应商现在会像以前一样回退到官方默认端点。
+- 修复会话启动后的首个轮次无法使用 MCP 工具的问题。
+- 修复粘贴的媒体和图片在 `/skill` 与插件命令参数中被丢弃的问题，以及使用 `Ctrl-S` 引导时图片被丢弃的问题。
+- 修复空推理块在跨供应商时被丢弃、导致多步工具调用中断的问题。
+- 修复自动权限模式下 plan 退出被标记为「用户已审阅」的问题：现在正确标记为自动批准，Agent 不会再误将其当作用户开始执行的信号。
+- 修复恢复会话时后台任务可能丢失、或被错误标记为丢失的问题。
+- 修复服务器关闭后可能残留实例文件的问题。
+
+### 重构
+
+- `kimi web` 默认切换到重构后的 Agent 引擎。
+
+## 0.23.6（2026-07-12）
+
+### 优化
+
+- web: 优化宽 Markdown 表格的显示，可超出阅读栏宽至 1040px，更宽时在表格内部横向滚动。
+- web: 服务端访问令牌在关闭标签页或重启浏览器后最多保留 7 天，不再每次开新标签页都要求重新输入。
+- web: 工作区选择器搜索框支持直接输入绝对路径添加工作区，输入时实时校验并给出补全建议。
+- web: 切换到支持思考强度级别的模型时，自动启用默认思考强度。
+- 导入自定义 registry 时识别 `support_efforts` 和 `default_effort` 字段，这些模型可设置思考强度（thinking effort）级别。
+- 更新 `/plugins` 面板中打开的 WebBridge 安装页链接。
+- 新增 `subagent.timeout_ms` 配置项（或 `KIMI_SUBAGENT_TIMEOUT_MS` 环境变量），控制单个子代理的超时时间，默认从 30 分钟提高到 2 小时。
+- 新增 print 模式后台策略：设置 `[background].print_background_mode = "steer"` 后，`kimi -p` 在后台任务完成后保持运行，继续引导主 Agent 进入后续轮次。
+
+### 修复
+
+- web: 修复断线重连后会话卡在发送状态的问题，断线期间完成的轮次现在能正常结束加载状态并发送下一条消息。
+- web: 修复启动或更新 web UI 后首次访问时，初始鉴权检查失败跳转到登录页的问题；现在停留在连接界面，显示连接错误并持续重试。
+- 修复 `kimi -p` 在目标仍活跃或有定时任务待触发时主轮次结束即退出的问题，目标续跑与定时任务触发现在能正常执行对应轮次。
+- 修复关闭问题提示时默认选中推荐选项的问题，现在视为用户选择不回答。
+- web: 修复恢复或重新加载会话后，ReadMediaFile 结果显示为普通工具卡片而非图片的问题。
+- web: 修复滚动浏览对话历史时聊天视图向下跳动的问题。
+- web: 修复模型下拉菜单中其他提供商的同名模型被错误勾选的问题，现在按唯一的模型 id 匹配当前模型。
+- web: 修复会话较多时侧边栏卡顿的问题，移除了渲染期间重复的会话列表扫描。
+
+### 重构
+
+- 将动态工具加载的模型能力名称从 `select_tools` 重命名为 `dynamically_loaded_tools`。
+
+## 0.23.5（2026-07-10）
+
+### 优化
+
+- 优化 provider 429、过载等瞬时错误的重试可靠性，遵循服务端 Retry-After 等待时间，并在 `-p --output-format stream-json` 输出中展示重试事件。
+
+### 修复
+
+- 修复 AVIF、BMP、TIFF、ICO 等不支持的图片格式导致会话中断的问题，覆盖远程图片 URL、工具误标格式等所有入口。已卡住的会话会自动丢弃问题图片并重试，单张异常图片不再导致后续请求全部失败。
+- web: 修复 “Turn finished” 桌面通知与完成提示音每轮触发两次的问题。
+- web: 修复内部的图片压缩说明被当作用户消息文本显示的问题。
+
+## 0.23.4（2026-07-10）
+
+### 新功能
+
+- web: 新增工具需要审批时的通知，并提升通知的可靠性。
+
+### 优化
+
+- web: 优化聊天界面，采用 Inter 字体、本地化标签与更紧凑的输入框和菜单样式。
+- web: 优化会话侧边栏的布局、配色、图标与字体。
+- `/usage` 和 `/status` 命令现显示 Extra Usage（加油包）余额。
+- `/plugins` 面板的 Official 标签页新增 Kimi WebBridge 入口，可在浏览器中打开 WebBridge 安装页。
+
+### 修复
+
+- 控制图片较多会话的请求体积：超大体量的模型读取与粘贴图片（含 WebP）会自动压缩、缩小；HEIC/HEIF 图片会给出对应平台的转换命令，而非污染会话；HTTP 413 请求过大现可自动恢复——请求和 `/compact` 会用文本标记替换旧媒体后重试。相关限制可通过 `config.toml` 的 `[image]`（或 `KIMI_IMAGE_*` 环境变量）配置，且每个 core 独立保存设置，重新加载某客户端的配置不再影响其他客户端的图片压缩。
+- 修复原工作目录已不存在的会话无法恢复的问题。
+- 修复 prompt 模式目标未运行至完成的问题，并在发送 prompt 前校验并提示无效的目标命令。
+- web: 修复新对话发送首条消息时偶发的 “another turn is active” 错误，并在发送过程中显示启动状态。
+
+## 0.23.3（2026-07-08）
+
+### 修复
+
+- 修复当前账户无法使用某模型时错误显示“OAuth 登录已过期”的问题。
+
+## 0.23.2（2026-07-08）
+
+### 新功能
+
+- 内置插件市场新增 Vercel 插件，运行 `/plugins` 并选择 Vercel Plugin 即可安装。
+
+### 修复
+
+- 修复 `kimi -p` 在轮次失败时仍以退出码 0 退出的问题。
+- 修复自主目标会被模型上报的状态更新暂停的问题。
+- 修复启动自主目标的轮次未计入其轮次预算的问题。
+- 将图片降采样上限从 2000px 提高到 3000px，并修复 EXIF 旋转（竖拍）照片在压缩说明与媒体读取备注中宽高互换的问题，使区域回读坐标正确对应。
+- web: 修复从后台返回后，WebSocket 重连完成但连接错误提示仍残留的问题。
+- 修复 Windows 上每次运行 hook 时控制台窗口闪烁的问题。
+
+### 优化
+
+- web: 重新设计定时提醒界面。
+- web: 在斜杠菜单中以 `/skill:<name>` 显示会话技能，便于与内置命令区分；直接输入技能名称仍然可用。
+- web: 输入框的模型切换器在切换当前会话模型的同时，也会更新全局默认模型，使新会话继承该选择。
+- web: 归档等确认对话框支持按 Enter 确认。
+- 优化目标模式对阻塞与完成状态更新的指引。
+- 渐进式工具加载（`select_tools`，实验功能）：压缩后丢弃已加载的工具 schema，由模型重新选择仍需要的工具，使压缩后上下文保持精简；凭记忆调用未再加载的工具会被拒绝，并提示先选择。仅在启用 `tool-select` 实验标志且模型支持 `select_tools` 时生效。
+
+### 重构
+
+- web: 在构建时编译图标，使打包后的 web UI 仅包含实际渲染的图标。
+
 ## 0.23.1（2026-07-07）
 
 ### 修复

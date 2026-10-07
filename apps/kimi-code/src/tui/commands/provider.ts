@@ -1,25 +1,24 @@
 import {
-  applyCustomRegistryEntries,
-  fetchCustomRegistry,
-  type CustomRegistrySource,
-  type ManagedKimiConfigShape,
-} from '@moonshot-ai/kimi-code-oauth';
-import {
   applyCatalogProvider,
-  catalogBaseUrl,
   catalogProviderModels,
   CatalogFetchError,
+  RegistryImportError,
+  type ImportCustomRegistryResult,
   DEFAULT_CATALOG_URL,
-  fetchCatalog,
-  inferWireType,
+  resolveCatalogImport,
+  SECONDARY_DERIVED_MODEL_ALIAS,
   type Catalog,
   type ThinkingEffort,
 } from '@moonshot-ai/kimi-code-sdk';
 
+import { createKimiCodeUserAgent } from '#/cli/version';
+import { fetchCatalogOrBuiltIn } from '#/utils/catalog-fetch';
+import { refreshKimiRegion } from '#/utils/region';
 import { ChoicePickerComponent } from '../components/dialogs/choice-picker';
 import {
   CustomRegistryImportDialogComponent,
   type CustomRegistryImportResult,
+  type CustomRegistryImportValue,
 } from '../components/dialogs/custom-registry-import';
 import {
   ProviderManagerComponent,
@@ -29,8 +28,10 @@ import { TabbedModelSelectorComponent } from '../components/dialogs/tabbed-model
 import { DEFAULT_OAUTH_PROVIDER_NAME } from '../constant/kimi-tui';
 import { formatErrorMessage } from '../utils/event-payload';
 import { thinkingEffortToConfig } from '../utils/thinking-config';
+import { effectiveModelForHost } from './config';
 import {
   promptApiKey,
+  promptBaseUrl,
   promptCatalogProviderSelection,
 } from './prompts';
 import type { SlashCommandHost } from './dispatch';
@@ -85,8 +86,11 @@ async function handleProviderManagerDeleteSource(
 async function handleProviderDelete(host: SlashCommandHost, providerId: string): Promise<void> {
   if (providerId === DEFAULT_OAUTH_PROVIDER_NAME) {
     await host.harness.auth.logout(DEFAULT_OAUTH_PROVIDER_NAME);
+    // Drop the process-wide region cache with the credential: derived
+    // endpoints (updates, marketplace, site links, telemetry) must fall back
+    // to the marker/default profile, not the logged-out region.
+    refreshKimiRegion();
     await host.authFlow.refreshConfigAfterLogout();
-    await host.authFlow.clearActiveSessionAfterLogout();
     return;
   }
 
@@ -95,7 +99,6 @@ async function handleProviderDelete(host: SlashCommandHost, providerId: string):
   const config = await host.harness.removeProvider(providerId);
   if (activeProvider === providerId) {
     await host.authFlow.refreshConfigAfterLogout();
-    await host.authFlow.clearActiveSessionAfterLogout();
   } else {
     host.setAppState({
       availableProviders: config.providers ?? {},
@@ -160,8 +163,17 @@ async function handleCatalogProviderAdd(host: SlashCommandHost): Promise<void> {
   const spinner = host.showLoginProgressSpinner(`Fetching catalog from ${DEFAULT_CATALOG_URL}`);
   let catalog: Catalog | undefined;
   try {
-    catalog = await fetchCatalog(DEFAULT_CATALOG_URL, controller.signal);
-    spinner.stop({ ok: true, label: 'Catalog loaded.' });
+    const loaded = await fetchCatalogOrBuiltIn(DEFAULT_CATALOG_URL, {
+      signal: controller.signal,
+      userAgent: createKimiCodeUserAgent(),
+    });
+    catalog = loaded.catalog;
+    spinner.stop({
+      ok: true,
+      label: loaded.fromBuiltIn
+        ? 'Catalog loaded from built-in snapshot (models.dev unreachable).'
+        : 'Catalog loaded.',
+    });
   } catch (error) {
     if (controller.signal.aborted) {
       spinner.stop({ ok: false, label: 'Aborted.' });
@@ -187,15 +199,34 @@ async function handleCatalogProviderAdd(host: SlashCommandHost): Promise<void> {
     return;
   }
 
-  const apiKey = await promptApiKey(host, entry.name ?? providerId);
-  if (apiKey === undefined) return;
-
-  const wire = inferWireType(entry);
-  if (wire === undefined) {
-    host.showError(`Provider "${providerId}" has unsupported wire type.`);
+  let resolution = resolveCatalogImport(entry);
+  if (resolution.kind === 'needs-base-url') {
+    const entered = await promptBaseUrl(host, entry.name ?? providerId);
+    if (entered === undefined) return;
+    resolution = resolveCatalogImport(entry, entered);
+  }
+  if (resolution.kind !== 'ok') {
+    if (resolution.kind === 'invalid') {
+      if (resolution.reason === 'unknown-explicit-type') {
+        host.showError(
+          `Provider "${providerId}" declares protocol "${entry.type}" in the catalog, which this client version does not support.`,
+        );
+      } else if (resolution.reason === 'proprietary-sdk') {
+        host.showError(
+          `Provider "${providerId}" uses a proprietary SDK this client cannot speak (e.g. Amazon Bedrock or Cohere); it cannot be imported from the catalog.`,
+        );
+      } else {
+        host.showError(
+          `Base URL contains an env placeholder or is empty. Enter the resolved URL instead.`,
+        );
+      }
+    }
     return;
   }
-  const baseUrl = catalogBaseUrl(entry, wire);
+  const { wire, baseUrl } = resolution;
+
+  const apiKey = await promptApiKey(host, entry.name ?? providerId);
+  if (apiKey === undefined) return;
 
   // Persist the provider and all its models immediately after the api key is
   // entered. The model selector that follows is just a convenience to pick the
@@ -224,12 +255,20 @@ async function handleCatalogProviderAdd(host: SlashCommandHost): Promise<void> {
   await host.authFlow.refreshConfigAfterLogin();
   host.track('connect', { provider: providerId, method: 'catalog' });
   host.showStatus(`Provider added: ${entry.name ?? providerId}`);
+  if (resolution.guessed) {
+    host.showStatus(
+      `Protocol guessed as "openai" for ${providerId} — edit "type" in config.toml if requests fail.`,
+    );
+  }
 
   // Build a merged model dictionary that includes existing models plus the
   // newly-persisted provider's models, so the tabbed selector shows every
   // provider's tab (the new provider's tab starts active via initialTabId).
+  // The v1 runtime may carry the synthesized `__secondary__` derived entry —
+  // never selectable in a picker.
   const stateModels = await host.harness.getConfig().then((c) => c.models ?? {});
   const mergedModels = { ...stateModels };
+  delete mergedModels[SECONDARY_DERIVED_MODEL_ALIAS];
 
   const selector = new TabbedModelSelectorComponent({
     models: mergedModels,
@@ -250,17 +289,49 @@ async function handleCatalogProviderAdd(host: SlashCommandHost): Promise<void> {
   host.mountEditorReplacement(selector);
 }
 
-async function setDefaultModel(
+export async function setDefaultModel(
   host: SlashCommandHost,
   alias: string,
   effort: ThinkingEffort,
 ): Promise<void> {
+  // Resolve efforts the same way the /model path does (effectiveModelForHost
+  // applies overrides and the protocol-profile inference): catalog entries for
+  // e.g. Anthropic models declare no support_efforts on the alias, and without
+  // the inference an above-default pick would slip through as a persisted effort.
+  const model = host.state.appState.availableModels[alias];
+  const thinking = thinkingEffortToConfig(
+    effort,
+    model === undefined ? undefined : effectiveModelForHost(host, model),
+  );
+  if (host.session === undefined) {
+    // A first prompt may still be inside lazy creation: wait it out so the
+    // pick lands on the new session instead of racing its assembly (same
+    // coordination as the /model path).
+    await host.waitForLazyCreation();
+  }
   await host.harness.setConfig({
     defaultModel: alias,
-    thinking: thinkingEffortToConfig(effort),
+    thinking,
   });
-  await host.authFlow.refreshConfigAfterLogin();
-  host.track('model_switch', { model: alias });
+  // Whether activation made the engine emit model_switch (it reached a live
+  // session AND changed the bound alias — both engines track only an actual
+  // change). Recorded at activation time rather than snapshotted at entry: a
+  // lazy session can come live while the config writes above are pending; a
+  // session created BY activation (v1) or a same-alias rebind does not count
+  // — both bind the model without an engine event.
+  let engineTrackedSwitch = await host.authFlow.refreshConfigAfterLogin();
+  // refreshConfigAfterLogin reactivates from the persisted config, so a pick
+  // the gate keeps session-only never reaches the runtime — apply it after
+  // the refresh, or the persisted value would clobber it.
+  if (thinking.effort === undefined && effort !== 'off' && effort !== 'on') {
+    engineTrackedSwitch =
+      (await host.authFlow.activateModelAfterLogin(alias, effort)) || engineTrackedSwitch;
+  }
+  // When the engine never emitted (no live session, or the alias was already
+  // bound), the TUI stays the sole producer for the pick.
+  if (!engineTrackedSwitch) {
+    host.track('model_switch', { model: alias });
+  }
   host.showStatus(`Default model set to ${alias} with thinking ${effort}.`);
 }
 
@@ -268,53 +339,55 @@ async function handleCustomRegistryAddViaDialog(host: SlashCommandHost): Promise
   const value = await promptCustomRegistryImport(host);
   if (value === undefined) return false;
 
-  const source: CustomRegistrySource = {
-    kind: 'apiJson',
-    url: value.url,
-    apiKey: value.apiKey,
-  };
-
-  let entries: Awaited<ReturnType<typeof fetchCustomRegistry>>;
+  let result: ImportCustomRegistryResult;
   try {
-    entries = await fetchCustomRegistry(source);
+    result = await host.harness.importCustomRegistry({
+      url: value.url,
+      apiKey: value.apiKey,
+      setDefaultWhenUnset: false,
+    });
   } catch (error) {
-    host.showError(`Failed to import registry: ${formatErrorMessage(error)}`);
+    if (error instanceof RegistryImportError && error.phase === 'empty') {
+      host.showStatus('Registry contained no providers.');
+      return false;
+    }
+    const phase =
+      error instanceof RegistryImportError && error.phase === 'fetch' ? 'import' : 'apply';
+    host.showError(`Failed to ${phase} registry: ${formatErrorMessage(error)}`);
+    if (
+      value.apiKey === undefined &&
+      error instanceof RegistryImportError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      host.showStatus('This registry requires authentication — paste its Bearer token.', 'warning');
+    }
     return false;
   }
-
-  const addedProviderIds = Object.values(entries).map((entry) => entry.id);
   try {
-    const config = await host.harness.getConfig();
-    applyCustomRegistryEntries(
-      config as unknown as ManagedKimiConfigShape,
-      entries,
-      source,
-    );
-    await host.harness.setConfig({
-      providers: config.providers,
-      models: config.models,
-    });
     await host.authFlow.refreshConfigAfterLogin();
   } catch (error) {
     host.showError(`Failed to apply registry: ${formatErrorMessage(error)}`);
     return false;
   }
-
+  const addedProviderIds = result.providers.map((provider) => provider.id);
   const count = addedProviderIds.length;
-  if (count === 0) {
-    host.showStatus('Registry contained no providers.');
-    return false;
-  }
   host.showStatus(
     count === 1
       ? 'Imported 1 provider from registry.'
       : `Imported ${String(count)} providers from registry.`,
     'success',
   );
+  for (const [id, envName] of Object.entries(result.credentialEnv)) {
+    host.showStatus(
+      `provider "${id}" declares credential env var "${envName}" — set api_key_env in config.toml to use it`,
+    );
+  }
 
   // Offer the model selector so the user can pick a default, just like the
-  // catalog (known-provider) flow.
-  const stateModels = await host.harness.getConfig().then((c) => c.models ?? {});
+  // catalog (known-provider) flow. Copy without the v1-synthesized
+  // `__secondary__` derived entry — never selectable in a picker.
+  const stateModels = { ...(await host.harness.getConfig().then((c) => c.models ?? {})) };
+  delete stateModels[SECONDARY_DERIVED_MODEL_ALIAS];
   const firstNewAlias = Object.keys(stateModels).find((a) =>
     addedProviderIds.some((pid) => a.startsWith(`${pid}/`)),
   );
@@ -343,7 +416,7 @@ async function handleCustomRegistryAddViaDialog(host: SlashCommandHost): Promise
 
 function promptCustomRegistryImport(
   host: SlashCommandHost,
-): Promise<{ readonly url: string; readonly apiKey: string } | undefined> {
+): Promise<CustomRegistryImportValue | undefined> {
   return new Promise((resolve) => {
     const dialog = new CustomRegistryImportDialogComponent(
       (result: CustomRegistryImportResult) => {

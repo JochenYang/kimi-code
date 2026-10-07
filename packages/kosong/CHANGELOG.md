@@ -1,5 +1,35 @@
 # @moonshot-ai/kosong
 
+## 0.5.6
+
+### Patch Changes
+
+- [#3003](https://github.com/MoonshotAI/kimi-code/pull/3003) [`ed1dc72`](https://github.com/MoonshotAI/kimi-code/commit/ed1dc720e2c134866854f6a67ae05fde023e1c33) Thanks [@silentiris](https://github.com/silentiris)! - Fix a crash when a model config entry lacks the `model` field (e.g. from a malformed TOML key like `[models.kimi-k2.7-code]`): the Anthropic profile matchers now tolerate `undefined` model names and return no profile instead of throwing `TypeError: Cannot read properties of undefined (reading 'toLowerCase')`.
+
+## 0.5.5
+
+### Patch Changes
+
+- [#2030](https://github.com/MoonshotAI/kimi-code/pull/2030) [`ec88d35`](https://github.com/MoonshotAI/kimi-code/commit/ec88d352e8f4dc5e8ffd1212f016138458f69893) Thanks [@RealKai42](https://github.com/RealKai42)! - Fix catalog-imported Claude models being wrongly locked into always-on thinking, and stop offering a misleading thinking Off option for models that cannot truly disable reasoning (such as Gemini 3). Also normalizes configured thinking effort values and unifies context-usage reporting.
+
+- [#2015](https://github.com/MoonshotAI/kimi-code/pull/2015) [`b5efba7`](https://github.com/MoonshotAI/kimi-code/commit/b5efba7abcaf4041f81ec520097a61e6546e8c50) Thanks [@RealKai42](https://github.com/RealKai42)! - Import many more providers from the models.dev catalog: vendor SDKs like xai and openrouter now import instead of being refused (with a "guessed" note), deprecated and alpha models are filtered out, per-model gateway protocol and endpoint overrides are honored, and context limits are correct (input limit for compaction, total window for completion). Imports lacking a usable endpoint now ask for one via `--base-url` or a prompt.
+
+- [#1968](https://github.com/MoonshotAI/kimi-code/pull/1968) [`71bcfba`](https://github.com/MoonshotAI/kimi-code/commit/71bcfba54a6836f4b6d4e26babde67576b293a64) Thanks [@RealKai42](https://github.com/RealKai42)! - Fix sessions getting stuck on every turn with a provider "message must not be empty" error after a content-filtered response.
+
+- [#2015](https://github.com/MoonshotAI/kimi-code/pull/2015) [`b5efba7`](https://github.com/MoonshotAI/kimi-code/commit/b5efba7abcaf4041f81ec520097a61e6546e8c50) Thanks [@RealKai42](https://github.com/RealKai42)! - Fix thinking levels being offered for models that do not support them (e.g. phantom levels on Kimi K3): levels now come from each model's declared capabilities. Models that cannot disable reasoning (e.g. gpt-5) no longer offer an Off option, and turning thinking Off on models that support it (e.g. xai grok) now truly disables reasoning.
+
+## 0.5.4
+
+### Patch Changes
+
+- [#1488](https://github.com/MoonshotAI/kimi-code/pull/1488) [`7bd29ab`](https://github.com/MoonshotAI/kimi-code/commit/7bd29ab0117a1c15691404f411fd67f511bbb897) Thanks [@starquakee](https://github.com/starquakee)! - Rename the dynamic tool loading model capability from `select_tools` to `dynamically_loaded_tools`.
+
+## 0.5.3
+
+### Patch Changes
+
+- [#1397](https://github.com/MoonshotAI/kimi-code/pull/1397) [`6c9abe8`](https://github.com/MoonshotAI/kimi-code/commit/6c9abe8cf7765b489ca50a2bb0f9b829fd680a51) Thanks [@kermanx](https://github.com/kermanx)! - Add provider-level structured response format support.
+
 ## 0.5.2
 
 ### Patch Changes

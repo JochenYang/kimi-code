@@ -1,12 +1,13 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { OldKimiJsonSchema, OldSessionStateSchema } from '../kimi-cli-schema.js';
+import { OldKimiJsonSchema } from '../kimi-cli-schema.js';
 import { ensureSessionIndexEntry } from '../session-index.js';
 import { sourceKimiJson, sourceSessionsDir } from '../paths.js';
 import type { SessionsSummary } from '../types.js';
-import { classifySessionDir } from './classify.js';
+import { classifyLegacySession } from './classify.js';
 import { migrateOneSession } from './migrate-one.js';
+import { listBucketSessions, readMergedSessionState, type LegacySessionRef } from './source.js';
 import { oldMd5BucketName } from './workdir-bucket.js';
 
 export interface SessionsStepInput {
@@ -22,8 +23,7 @@ interface WorkdirMeta {
 }
 
 interface SessionCandidate {
-  readonly sourceSessionDir: string;
-  readonly oldSessionUuid: string;
+  readonly source: LegacySessionRef;
   readonly workdirPath: string;
   readonly wireMtime: number;
 }
@@ -52,14 +52,24 @@ export async function migrateSessionsStep(
   let bucketDirs: string[];
   try {
     bucketDirs = await readdir(sessionsDir);
-  } catch {
-    return emptySummary();
+  } catch (error) {
+    if (isMissingError(error)) return emptySummary();
+    return {
+      ...emptySummary(),
+      sessionsFailed: [
+        {
+          sourcePath: sessionsDir,
+          reason: `Legacy sessions directory could not be read: ${formatError(error)}`,
+        },
+      ],
+    };
   }
 
   const candidates: SessionCandidate[] = [];
 
   for (const bucketName of bucketDirs) {
     bucketsScanned++;
+    const bucketPath = join(sessionsDir, bucketName);
     const workdir = resolveBucket(bucketName, md5ToWorkdir);
     if (workdir.kind === 'nonlocal-kaos') {
       bucketsSkippedNonlocalKaos++;
@@ -67,19 +77,25 @@ export async function migrateSessionsStep(
     }
     if (workdir.kind === 'no-workdir-found') {
       bucketsSkippedNoWorkdirFound++;
+      sessionsFailed.push({
+        sourcePath: bucketPath,
+        reason: unknownWorkdirReason(),
+      });
       continue;
     }
     // workdir.kind === 'local'
-    const bucketPath = join(sessionsDir, bucketName);
-    let sessionUuids: string[];
+    let refs: LegacySessionRef[];
     try {
-      sessionUuids = await readdir(bucketPath);
-    } catch {
+      refs = await listBucketSessions(bucketPath);
+    } catch (error) {
+      sessionsFailed.push({
+        sourcePath: bucketPath,
+        reason: `Legacy session bucket could not be read: ${formatError(error)}`,
+      });
       continue;
     }
-    for (const uuid of sessionUuids) {
-      const sessionDir = join(bucketPath, uuid);
-      const cls = await classifySessionDir(sessionDir);
+    for (const ref of refs) {
+      const cls = await classifyLegacySession(ref);
       if (cls === 'placeholder') {
         sessionsSkippedPlaceholder++;
         continue;
@@ -89,13 +105,15 @@ export async function migrateSessionsStep(
         continue;
       }
       if (cls === 'malformed') {
-        sessionsSkippedMalformed++;
+        sessionsFailed.push({
+          sourcePath: sessionReportPath(ref, bucketPath),
+          reason: unreadableSessionReason(),
+        });
         continue;
       }
-      const wireMtime = await readWireMtime(sessionDir);
+      const wireMtime = await readWireMtime(ref);
       candidates.push({
-        sourceSessionDir: sessionDir,
-        oldSessionUuid: uuid,
+        source: ref,
         workdirPath: workdir.path,
         wireMtime,
       });
@@ -111,8 +129,7 @@ export async function migrateSessionsStep(
   let processedCount = 0;
   for (const c of candidates) {
     const result = await migrateOneSession({
-      sourceSessionDir: c.sourceSessionDir,
-      oldSessionUuid: c.oldSessionUuid,
+      source: c.source,
       workdirPath: c.workdirPath,
       targetHome: input.targetHome,
     });
@@ -124,7 +141,7 @@ export async function migrateSessionsStep(
         // this session survived a deleted target dir, re-migrating it must not
         // append a second line for the same id.
         await ensureSessionIndexEntry(input.targetHome, {
-          sessionId: `ses_${c.oldSessionUuid}`,
+          sessionId: `ses_${c.source.uuid}`,
           sessionDir: result.targetDir,
           workDir: c.workdirPath,
         });
@@ -134,7 +151,7 @@ export async function migrateSessionsStep(
         // without it the session is unopenable. Record it as failed so the run
         // summary is honest; one bad index write must not abort the batch.
         sessionsFailed.push({
-          sourcePath: c.sourceSessionDir,
+          sourcePath: sessionReportPath(c.source, ''),
           reason: `session migrated but index append failed: ${String(error)}`,
         });
       }
@@ -145,7 +162,7 @@ export async function migrateSessionsStep(
       // self-heals an index that is missing this session.
       try {
         await ensureSessionIndexEntry(input.targetHome, {
-          sessionId: `ses_${c.oldSessionUuid}`,
+          sessionId: `ses_${c.source.uuid}`,
           sessionDir: result.targetDir,
           workDir: c.workdirPath,
         });
@@ -154,24 +171,24 @@ export async function migrateSessionsStep(
         // The index entry is genuinely missing and could not be added — the
         // session stays unreachable by id, so record it as failed.
         sessionsFailed.push({
-          sourcePath: c.sourceSessionDir,
+          sourcePath: sessionReportPath(c.source, ''),
           reason: `session already migrated but index entry could not be ensured: ${String(error)}`,
         });
       }
     } else if (result.outcome === 'conflict') {
       sessionsConflicts.push({
-        sourcePath: c.sourceSessionDir,
+        sourcePath: sessionReportPath(c.source, ''),
         targetPath: result.targetDir,
       });
     } else if (result.outcome === 'empty') {
       // No migratable conversation (empty or user-cleared session). Counted
-      // as skipped, not failed — `classifySessionDir` usually catches these
+      // as skipped, not failed — `classifyLegacySession` usually catches these
       // before they become candidates, but a translator/classifier edge can
       // still land one here.
       sessionsSkippedEmpty++;
     } else {
       sessionsFailed.push({
-        sourcePath: c.sourceSessionDir,
+        sourcePath: sessionReportPath(c.source, ''),
         reason: result.reason,
       });
     }
@@ -232,22 +249,30 @@ async function loadWorkdirs(sourceHome: string): Promise<WorkdirMeta[]> {
   }
 }
 
-async function readWireMtime(sessionDir: string): Promise<number> {
-  try {
-    const text = await readFile(join(sessionDir, 'state.json'), 'utf-8');
-    const parsed = OldSessionStateSchema.parse(JSON.parse(text));
-    if (parsed.wire_mtime !== null && parsed.wire_mtime !== undefined) {
-      return parsed.wire_mtime * 1000;
+async function readWireMtime(ref: LegacySessionRef): Promise<number> {
+  const state = await readMergedSessionState(ref.sessionDir);
+  if (state.wire_mtime !== null && state.wire_mtime !== undefined) {
+    return state.wire_mtime * 1000;
+  }
+  if (ref.sessionDir !== undefined) {
+    try {
+      return (await stat(join(ref.sessionDir, 'wire.jsonl'))).mtimeMs;
+    } catch {
+      // fall through to the context payload's mtime
     }
-  } catch {
-    // fall through to wire.jsonl mtime
   }
-  try {
-    const st = await stat(join(sessionDir, 'wire.jsonl'));
-    return st.mtimeMs;
-  } catch {
-    return 0;
+  if (ref.contextPath !== undefined) {
+    try {
+      return (await stat(ref.contextPath)).mtimeMs;
+    } catch {
+      // fall through
+    }
   }
+  return 0;
+}
+
+function sessionReportPath(ref: LegacySessionRef, fallback: string): string {
+  return ref.sessionDir ?? ref.flatContextFile ?? join(fallback, ref.uuid);
 }
 
 function emptySummary(): SessionsSummary {
@@ -265,4 +290,25 @@ function emptySummary(): SessionsSummary {
     sessionsFailed: [],
     sessionsConflicts: [],
   };
+}
+
+function unknownWorkdirReason(): string {
+  return 'No local workdir mapping was found for this legacy session bucket; kimi.json may be missing, unreadable, or not list the workdir.';
+}
+
+function unreadableSessionReason(): string {
+  return 'Legacy session could not be inspected because its context is missing or unreadable.';
+}
+
+function isMissingError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { readonly code?: unknown }).code === 'ENOENT'
+  );
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

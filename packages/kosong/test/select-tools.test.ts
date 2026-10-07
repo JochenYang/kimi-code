@@ -7,7 +7,7 @@
  *     normalization and the `$` builtin branch shared with top-level tools);
  *   - `Tool.deferred` stripping in `generate()` (single strip point for every
  *     provider call — the marker itself must never reach the wire);
- *   - the `select_tools` capability bit (unknown/default-off semantics).
+ *   - the `dynamically_loaded_tools` capability bit (unknown/default-off semantics).
  */
 
 import { UNKNOWN_CAPABILITY, isUnknownCapability } from '#/capability';
@@ -74,7 +74,15 @@ async function captureRequestBody(
     .fn()
     .mockImplementation((params: unknown) => {
       capturedBody = params as Record<string, unknown>;
-      return Promise.resolve(makeChatCompletionResponse());
+      // The Kimi provider consumes `APIPromise.withResponse()` to read the
+      // `x-trace-id` header, so the mock must expose that method.
+      return {
+        withResponse: () =>
+          Promise.resolve({
+            data: makeChatCompletionResponse(),
+            response: new Response(null),
+          }),
+      };
     });
   const stream = await provider.generate('system prompt', tools, history);
   for await (const part of stream) {
@@ -324,30 +332,32 @@ describe('providers without message-level tool declarations', () => {
   });
 });
 
-describe('select_tools capability bit', () => {
+describe('dynamically_loaded_tools capability bit', () => {
+  const BASE_CAPABILITY = {
+    image_in: false,
+    video_in: false,
+    audio_in: false,
+    thinking: false,
+    tool_use: false,
+    max_context_tokens: 0,
+  };
+
   it('defaults to false on UNKNOWN_CAPABILITY', () => {
-    expect(UNKNOWN_CAPABILITY.select_tools).toBe(false);
+    expect(UNKNOWN_CAPABILITY.dynamically_loaded_tools).toBe(false);
   });
 
-  it('a capability that only has select_tools is not "unknown"', () => {
-    expect(
-      isUnknownCapability({
-        image_in: false,
-        video_in: false,
-        audio_in: false,
-        thinking: false,
-        tool_use: false,
-        max_context_tokens: 0,
-        select_tools: true,
-      }),
-    ).toBe(false);
+  it('a capability that only has the bit set is not "unknown"', () => {
+    expect(isUnknownCapability({ ...BASE_CAPABILITY, dynamically_loaded_tools: true })).toBe(
+      false,
+    );
   });
 
-  it('catalog entries map select_tools and default it to false', () => {
+  it('catalog entries map the capability, defaulting to false', () => {
     const base = { id: 'm', limit: { context: 1000 } };
-    expect(catalogModelToCapability(base)?.capability.select_tools).toBe(false);
+    expect(catalogModelToCapability(base)?.capability.dynamically_loaded_tools).toBe(false);
     expect(
-      catalogModelToCapability({ ...base, select_tools: true })?.capability.select_tools,
+      catalogModelToCapability({ ...base, dynamically_loaded_tools: true })?.capability
+        .dynamically_loaded_tools,
     ).toBe(true);
   });
 });
