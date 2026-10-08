@@ -121,7 +121,7 @@ export interface LlmStatusErrorInput {
   readonly retryable?: boolean;
 }
 
-const RETRYABLE_HTTP_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
+const RETRYABLE_HTTP_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504, 524, 529, 554]);
 
 export function toLlmStreamErrorMessage(
   input: Omit<LlmStatusErrorInput, 'statusCode'> & { readonly businessCode?: number },
