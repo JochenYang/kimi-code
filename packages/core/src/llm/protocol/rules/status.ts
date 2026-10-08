@@ -155,7 +155,9 @@ export function isTransientHttpStatus(statusCode: number | undefined): boolean {
     case 502:
     case 503:
     case 504:
+    case 524:
     case 529:
+    case 554:
       return true;
     case undefined:
       return false;
