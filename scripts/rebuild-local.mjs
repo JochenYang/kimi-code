@@ -9,6 +9,7 @@ const branch = 'dev';
 const upstreamRemote = 'upstream';
 const forkRemote = 'origin';
 const forkBranch = branch;
+const releaseTagPattern = '@moonshot-ai/kimi-code@*';
 const kimiBin = resolve(process.env['USERPROFILE'] || process.env['HOME'], '.kimi-code', 'bin', 'kimi.exe');
 
 function run(cmd, opts = {}) {
@@ -18,6 +19,15 @@ function run(cmd, opts = {}) {
 
 function shellOut(cmd, opts = {}) {
   return execSync(cmd, { cwd: root, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts });
+}
+
+function resolveLatestRelease() {
+  const output = shellOut(`git tag -l "${releaseTagPattern}" --sort=-v:refname`).trim();
+  const tag = output.split(/\r?\n/).find((line) => line.length > 0);
+  if (tag === undefined) {
+    throw new Error(`no release tag matching "${releaseTagPattern}" found after fetching ${upstreamRemote}`);
+  }
+  return tag;
 }
 
 function hasUncommittedChanges() {
@@ -110,21 +120,22 @@ function main() {
       stashCommit = stashUncommittedChanges();
     }
 
-    // 3. Fetch latest upstream.
-    run(`git fetch ${upstreamRemote} main`);
+    // 3. Fetch the latest upstream release tags.
+    run(`git fetch ${upstreamRemote} --tags --force`);
 
-    // 4. Rebase our patches onto latest upstream main.
-    console.log(`\n==> Rebasing onto ${upstreamRemote}/main...`);
+    // 4. Rebase our patches onto the latest upstream release.
+    const releaseTag = resolveLatestRelease();
+    console.log(`\n==> Rebasing onto release ${releaseTag}...`);
     let needsRebase = false;
     try {
-      shellOut(`git merge-base --is-ancestor ${upstreamRemote}/main HEAD`, { stdio: 'pipe' });
+      shellOut(`git merge-base --is-ancestor "${releaseTag}" HEAD`, { stdio: 'pipe' });
     } catch {
       needsRebase = true;
     }
 
     if (needsRebase) {
       try {
-        run(`git rebase ${upstreamRemote}/main`);
+        run(`git rebase "${releaseTag}"`);
       } catch {
         rebaseFailed = true;
         console.error('\n!!! Rebase failed. Resolve conflicts, then:');
@@ -133,7 +144,7 @@ function main() {
         throw new Error('rebase failed');
       }
     } else {
-      console.log('    (already up to date with upstream main — skipping rebase)');
+      console.log(`    (already up to date with release ${releaseTag} — skipping rebase)`);
     }
 
     // 5. Restore the exact stash created above. Rebase must succeed before
@@ -163,7 +174,7 @@ function main() {
     console.log(`\n==> ✅ Installed to ${kimiBin}`);
 
     // 10. Push the rebased branch to the fork so the fork mirrors
-    //     "upstream main + our patches". This is a sync, so use push with
+    //     "upstream release + our patches". This is a sync, so use push with
     //     --force-with-lease: rebase rewrites our local commits so the fast-
     //     forward assumption doesn't hold, but the remote state is updated
     //     only if no one else moved HEAD on the fork.
