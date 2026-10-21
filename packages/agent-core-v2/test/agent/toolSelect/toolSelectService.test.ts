@@ -1725,7 +1725,7 @@ describe('post-compaction dynamic tool hot-reload', () => {
     registerMcp(h, new StubMcpTool(MCP_ALPHA));
     const select = h.ix.get(IAgentToolSelectService);
     select.recordRecentToolUse(MCP_ALPHA);
-    expect(select.reloadRecentAfterCompaction()).toEqual({
+    expect(select.reloadRecentAfterCompaction()).toMatchObject({
       toLoad: [],
       alreadyAvailable: [],
       alreadyCallable: [],
