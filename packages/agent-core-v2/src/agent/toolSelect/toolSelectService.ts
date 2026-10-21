@@ -54,6 +54,21 @@ const EMPTY_TOOL_PARAMETERS: Record<string, unknown> = {
   properties: {},
 };
 
+function emptyLoadResult(consecutiveFailures: number): LoadToolsResult {
+  return {
+    toLoad: [],
+    alreadyAvailable: [],
+    alreadyCallable: [],
+    staleLoaded: [],
+    policyDenied: [],
+    unknown: [],
+    escalated: {},
+    consecutiveFailures,
+    suggestions: {},
+    loadable: [],
+  };
+}
+
 export class AgentToolSelectService extends Service implements IAgentToolSelectService {
   declare readonly _serviceBrand: undefined;
   private readonly recentDynamic = new RecentDynamicToolTracker();
@@ -450,27 +465,9 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
   }
 
   reloadRecentAfterCompaction(max: number = 8): LoadToolsResult {
-    if (!this.enabled()) {
-      return {
-        toLoad: [],
-        alreadyAvailable: [],
-        alreadyCallable: [],
-        unknown: [],
-        suggestions: {},
-        loadable: [],
-      };
-    }
+    if (!this.enabled()) return emptyLoadResult(this.consecutiveFailures);
     const recent = this.recentDynamic.recent(max);
-    if (recent.length === 0) {
-      return {
-        toLoad: [],
-        alreadyAvailable: [],
-        alreadyCallable: [],
-        unknown: [],
-        suggestions: {},
-        loadable: [],
-      };
-    }
+    if (recent.length === 0) return emptyLoadResult(this.consecutiveFailures);
     return this.load(recent);
   }
 
