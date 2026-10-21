@@ -30,6 +30,16 @@ function resolveLatestRelease() {
   return tag;
 }
 
+function resolveReleaseBase(releaseTag) {
+  try {
+    return shellOut(`git describe --tags --abbrev=0 --match "${releaseTagPattern}" ${branch}`).trim();
+  } catch {
+    throw new Error(
+      `cannot determine which release ${branch} is currently based on; rebase it onto a release tag manually first`,
+    );
+  }
+}
+
 function hasUncommittedChanges() {
   const status = shellOut('git status --porcelain');
   return status.trim().length > 0;
@@ -123,9 +133,13 @@ function main() {
     // 3. Fetch the latest upstream release tags.
     run(`git fetch ${upstreamRemote} --tags --force`);
 
-    // 4. Rebase our patches onto the latest upstream release.
+    // 4. Rebase our patches onto the latest upstream release. Replaying
+    //    "${releaseTag}..HEAD" with --onto (instead of `rebase <tag>`) drops
+    //    the previous release's bookkeeping commits — its version bump and web
+    //    dist sync — which the new release has already superseded.
     const releaseTag = resolveLatestRelease();
-    console.log(`\n==> Rebasing onto release ${releaseTag}...`);
+    const patchBase = resolveReleaseBase(releaseTag);
+    console.log(`\n==> Rebasing local patches onto release ${releaseTag}...`);
     let needsRebase = false;
     try {
       shellOut(`git merge-base --is-ancestor "${releaseTag}" HEAD`, { stdio: 'pipe' });
@@ -135,7 +149,7 @@ function main() {
 
     if (needsRebase) {
       try {
-        run(`git rebase "${releaseTag}"`);
+        run(`git rebase --onto "${releaseTag}" "${patchBase}" ${branch}`);
       } catch {
         rebaseFailed = true;
         console.error('\n!!! Rebase failed. Resolve conflicts, then:');
