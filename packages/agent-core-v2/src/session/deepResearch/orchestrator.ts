@@ -1,13 +1,3 @@
-/**
- * `deepResearch` domain — the four-phase orchestrator:
- * Plan → Research → Verify → cited Report (or Partial on degradation).
- *
- * Stateless orchestration over a `DeepResearchHost`: the host spawns subagents
- * (research and verification phases fan out to parallel subagents) and writes
- * the report; this class owns phase order, schema validation, caps, and
- * partial aggregation. Fully testable with a fake host.
- */
-
 import { randomUUID } from 'node:crypto';
 
 import { isAbortError } from '#/_base/utils/abort';
@@ -48,9 +38,7 @@ export class DeepResearchOrchestrator {
     this.breadth = clampBreadth(input.breadth);
   }
 
-  /** Run the full deep-research workflow. */
   async run(signal: AbortSignal): Promise<DeepResearchResult> {
-    // ── Phase 1: Plan ──────────────────────────────────────────────────
     try {
       signal.throwIfAborted();
       await this.phase('Plan', 'Decompose query into independent questions');
@@ -63,7 +51,6 @@ export class DeepResearchOrchestrator {
         return this.buildEmptyResult('partial', 'No research questions could be generated.');
       }
 
-      // ── Phase 2: Research ────────────────────────────────────────────
       await this.phase(
         'Research',
         `Gather structured claims in parallel (${String(questions.length)} question(s))`,
@@ -77,7 +64,6 @@ export class DeepResearchOrchestrator {
         return this.buildEmptyResult('partial', 'No supported factual answer could be produced.');
       }
 
-      // ── Phase 3: Verify ──────────────────────────────────────────────
       await this.phase('Verify', 'Cross-check every candidate claim');
       const verified = await this.verifyPhase(candidates, signal);
       signal.throwIfAborted();
@@ -88,7 +74,6 @@ export class DeepResearchOrchestrator {
         return this.buildEmptyResult('partial', 'None of the candidate claims survived independent source verification.');
       }
 
-      // ── Phase 4: Report ──────────────────────────────────────────────
       await this.phase('Report', 'Synthesize verified claims into cited prose');
       return await this.reportPhase(verified, questions, signal);
 
@@ -99,8 +84,6 @@ export class DeepResearchOrchestrator {
       throw error;
     }
   }
-
-  // ── Phase 1: Plan ────────────────────────────────────────────────────────
 
   private async planPhase(signal: AbortSignal): Promise<string[]> {
     const result = await this.host.runAgent({
@@ -142,8 +125,6 @@ export class DeepResearchOrchestrator {
     );
     return planned;
   }
-
-  // ── Phase 2: Research ────────────────────────────────────────────────────
 
   private async researchPhase(questions: string[], signal: AbortSignal): Promise<CandidateClaim[]> {
     const calls = questions.map((q, i) => ({
@@ -214,8 +195,6 @@ export class DeepResearchOrchestrator {
     return candidates;
   }
 
-  // ── Phase 3: Verify ──────────────────────────────────────────────────────
-
   private async verifyPhase(
     candidates: CandidateClaim[],
     signal: AbortSignal,
@@ -223,7 +202,6 @@ export class DeepResearchOrchestrator {
     const verifierCount = Math.min(DEEP_RESEARCH_MAX_VERIFIERS, candidates.length);
     if (verifierCount === 0) return [];
 
-    // Distribute claims across verifier shards
     const shards: CandidateClaim[][] = Array.from({ length: verifierCount }, () => []);
     for (let i = 0; i < candidates.length; i++) {
       const c: CandidateClaim | undefined = candidates[i] as CandidateClaim | undefined;
@@ -243,7 +221,6 @@ export class DeepResearchOrchestrator {
 
     const results = await this.host.runParallel(verifyCalls, signal);
 
-    // Determine which shards are valid
     const shardValid: boolean[] = [];
     for (let i = 0; i < verifierCount; i++) {
       const r: DeepResearchAgentOutcome | undefined = results[i] as DeepResearchAgentOutcome | undefined;
@@ -257,7 +234,6 @@ export class DeepResearchOrchestrator {
           valid = false;
         } else {
           const verdicts = parsed.data.verdicts;
-          // Check exact claim_id matching
           const verdictIds = new Set(verdicts.map((v) => v.claim_id));
           const expected = new Set(expectedIds[i] ?? []);
 
@@ -274,7 +250,6 @@ export class DeepResearchOrchestrator {
       shardValid.push(valid);
     }
 
-    // Assemble verified claims
     const verified: VerifiedClaim[] = [];
     for (let i = 0; i < candidates.length; i++) {
       const c: CandidateClaim | undefined = candidates[i] as CandidateClaim | undefined;
@@ -326,8 +301,6 @@ export class DeepResearchOrchestrator {
     return verified;
   }
 
-  // ── Phase 4: Report ──────────────────────────────────────────────────────
-
   private async reportPhase(
     verified: VerifiedClaim[],
     questions: readonly string[],
@@ -335,7 +308,6 @@ export class DeepResearchOrchestrator {
   ): Promise<DeepResearchResult> {
     const status: DeepResearchStatus = this.partial ? 'partial' : 'verified';
 
-    // Build citation packet
     const citationPacket = verified.map((f, i) => ({
       citation: `S${i + 1}`,
       claim: f.claim,
@@ -344,13 +316,10 @@ export class DeepResearchOrchestrator {
       confidence_note: f.verifier_note,
     }));
 
-    // Build deterministic fallback body
     const fallbackBody = '## Findings\n' + verified.map((f, i) => `- ${f.claim} [S${i + 1}]`).join('\n');
 
     let body = fallbackBody;
 
-    // Try LLM synthesis. Abort must rethrow so the outer catch can mark cancelled;
-    // only non-abort synthesis failures fall back to the deterministic list.
     try {
       signal.throwIfAborted();
       const synthesisPrompt = buildSynthesisPrompt(this.originalQuery, JSON.stringify(citationPacket, null, 2));
@@ -383,7 +352,6 @@ export class DeepResearchOrchestrator {
       this.coverageNotes.push('Report synthesis failed; the deterministic finding list is shown instead.');
     }
 
-    // Build final reports
     const fullReport = buildFullReport({
       status,
       body,
@@ -391,13 +359,11 @@ export class DeepResearchOrchestrator {
       coverageNotes: this.coverageNotes,
     });
 
-    // Write to scratch
     let reportPath: string | null = null;
     try {
       signal.throwIfAborted();
       reportPath = await this.host.writeReport(this.runId, fullReport);
     } catch {
-      // Non-fatal: report is still available in memory
       this.coverageNotes.push('The full report could not be written to disk.');
     }
 
@@ -414,8 +380,6 @@ export class DeepResearchOrchestrator {
       runId: this.runId,
     };
   }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
 
   private buildEmptyResult(status: DeepResearchStatus, fallbackMessage: string): DeepResearchResult {
     const report = `# Research result\n\n**Status: ${capitalize(status)}**\n\n${fallbackMessage}\n\n## Coverage and uncertainty\n${this.coverageNotes.map((n) => `- ${n}`).join('\n')}\n`;
@@ -436,8 +400,6 @@ export class DeepResearchOrchestrator {
     this.host.onProgress?.({ phase, detail });
   }
 }
-
-// ── Module-level helpers ─────────────────────────────────────────────────────
 
 function clampBreadth(breadth?: number): number {
   if (breadth === undefined) return DEEP_RESEARCH_DEFAULT_BREADTH;

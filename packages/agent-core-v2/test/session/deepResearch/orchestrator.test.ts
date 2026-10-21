@@ -1,9 +1,3 @@
-/**
- * DeepResearchOrchestrator unit tests with a fake host.
- * Tests the phase sequencing, schema validation, budget enforcement,
- * partial-result aggregation, and report building in isolation.
- */
-
 import { describe, expect, it } from 'vitest';
 
 import { DeepResearchOrchestrator } from '#/session/deepResearch/orchestrator';
@@ -19,8 +13,6 @@ import type {
   DeepResearchProgress,
   DeepResearchResult,
 } from '#/session/deepResearch/types';
-
-// ── Fake host ────────────────────────────────────────────────────────────────
 
 function makePlanResult(questions: string[]): DeepResearchAgentOutcome {
   return {
@@ -108,7 +100,6 @@ function makeFakeHost(
       if (calls.length > 0 && calls[0]?.phase === 'Research') {
         const preset = options.research;
         if (preset !== undefined) {
-          // Pad with fallback failures to match call count
           return calls.map((_, i) => preset[i] ?? { success: false, output: '', error: 'No preset result' });
         }
         return calls.map(() => makeResearchResult([
@@ -125,7 +116,6 @@ function makeFakeHost(
         if (preset !== undefined) {
           return calls.map((_, i) => preset[i] ?? makeVerifyResult([]));
         }
-        // Default: match candidate claims by index. Each call gets its expected claims.
         return calls.map((_, i) => makeVerifyResult([
           {
             claim_id: `claim-${i}`,
@@ -145,8 +135,6 @@ function makeFakeHost(
     },
   };
 }
-
-// ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('DeepResearchOrchestrator', () => {
   it('runs plan → research → verify → report for a basic query', async () => {
@@ -204,7 +192,6 @@ describe('DeepResearchOrchestrator', () => {
     const result = await orchestrator.run(new AbortController().signal);
 
     expect(result.status).toBe('verified');
-    // Should contain the deterministic fallback with "## Findings"
     expect(result.chatReport).toContain('Default claim');
   });
 
@@ -227,7 +214,6 @@ describe('DeepResearchOrchestrator', () => {
         output: JSON.stringify({ questions: ['Q1', 'Q2', 'Q3', 'Q4'] }),
       },
     });
-    // Abort before research starts
     controller.abort();
     const orchestrator = new DeepResearchOrchestrator({ query: 'test query' }, host);
     const result = await orchestrator.run(controller.signal);
@@ -239,7 +225,6 @@ describe('DeepResearchOrchestrator', () => {
     const host = makeFakeHost();
     const orchestrator = new DeepResearchOrchestrator({ query: 'test', breadth: 10 }, host);
     const result = await orchestrator.run(new AbortController().signal);
-    // Should still work (breadth clamped to 6)
     expect(result.status).toBe('verified');
   });
 
@@ -256,7 +241,6 @@ describe('DeepResearchOrchestrator', () => {
     const result = await orchestrator.run(new AbortController().signal);
 
     expect(result.status).toBe('partial');
-    // Should have a meaningful fallback report
     expect(result.report).toContain('Partial');
   });
 
@@ -268,11 +252,8 @@ describe('DeepResearchOrchestrator', () => {
     expect(result.report).toContain('## Sources');
     expect(result.report).toContain('[S1]');
     expect(result.report).toContain('[S2]');
-    // Citations in the body link straight to their source URL.
     expect(result.report).toContain('[S1](<https://example.com/default>)');
     expect(result.report).toContain('[S2](<https://example.com/default>)');
-    // The Sources section is a clean one-entry-per-line list: no verifier
-    // process noise, no "independently checked" follow-up lines.
     expect(result.report).not.toContain('independently checked');
   });
 

@@ -85,12 +85,10 @@ export interface TurnEndedEvent {
   thinking_effort?: string;
   trace_id?: string;
   enabled_plugins?: string;
-  /** Aggregated turn input tokens (cache + miss). */
   input_tokens?: number;
   input_cache_read?: number;
   input_cache_creation?: number;
   input_other?: number;
-  /** input_cache_read / input_tokens, 0 when no input. */
   cache_hit_ratio?: number;
   output_tokens?: number;
 }

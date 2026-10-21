@@ -97,7 +97,6 @@ export function extractWorkingSetEvidence(
     if (message.role === 'user' || message.role === 'assistant') {
       const text = contentText(message.content);
       if (!FAILURE_HINT.test(text) || text.length < 40) continue;
-      // Skip pure system-reminder / injection noise.
       if (message.origin?.kind === 'injection') continue;
       if (message.origin?.kind === 'compaction_summary') continue;
       items.push({

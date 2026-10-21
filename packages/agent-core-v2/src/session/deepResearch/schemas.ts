@@ -1,14 +1,4 @@
-/**
- * `deepResearch` domain — zod schemas for structured phase output parsing.
- *
- * Each phase's agent output is validated against these schemas; `tryParseJson`
- * extracts fenced or bare JSON blocks and validates them leniently so a
- * verbose subagent reply still yields its structured payload.
- */
-
 import { z } from 'zod';
-
-// ── Plan phase ───────────────────────────────────────────────────────────────
 
 export const PlanOutputSchema = z.object({
   questions: z
@@ -19,8 +9,6 @@ export const PlanOutputSchema = z.object({
 });
 
 export type PlanOutput = z.infer<typeof PlanOutputSchema>;
-
-// ── Research phase ────────────────────────────────────────────────────────────
 
 export const ClaimSchema = z.object({
   claim: z.string().min(1),
@@ -38,8 +26,6 @@ export const ResearchOutputSchema = z.object({
 
 export type ResearchOutput = z.infer<typeof ResearchOutputSchema>;
 
-// ── Verify phase ─────────────────────────────────────────────────────────────
-
 export const VerdictSchema = z.object({
   claim_id: z.string().min(1),
   supported: z.boolean(),
@@ -55,10 +41,6 @@ export const VerifyOutputSchema = z.object({
 
 export type VerifyOutput = z.infer<typeof VerifyOutputSchema>;
 
-/**
- * Try to parse a JSON object from a subagent's output text.
- * Handles fenced JSON blocks (```json ... ```) and bare JSON.
- */
 export function tryParseJson<T>(text: string, schema: z.ZodSchema<T>): { ok: true; data: T } | { ok: false; error: string } {
   const candidates = extractJsonCandidates(text);
   let lastError = 'No JSON object found in agent output';
@@ -79,7 +61,6 @@ export function tryParseJson<T>(text: string, schema: z.ZodSchema<T>): { ok: tru
   return { ok: false, error: lastError };
 }
 
-/** Prefer fenced blocks, then the largest top-level `{...}` slice. */
 function extractJsonCandidates(text: string): string[] {
   const out: string[] = [];
   const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);

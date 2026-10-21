@@ -1,20 +1,7 @@
-/**
- * `deepResearch` domain — main-agent context handoff after a deep-research run.
- *
- * The pipeline does not use a main turn, so the report is invisible to the
- * next user message unless we inject a short summary + report path. Full
- * report body stays on disk; the model Reads the path when it needs detail.
- */
-
 import type { DeepResearchResult } from './types';
 
-/** Soft cap so a large chatReport does not dominate the main context. */
 export const DEEP_RESEARCH_HANDOFF_SUMMARY_CHARS = 4_000;
 
-/**
- * Build the text injected into the main agent context after a successful
- * (verified / partial) deep-research run. Not used for cancelled runs.
- */
 export function formatDeepResearchHandoff(result: DeepResearchResult, query: string): string {
   const statusLabel = result.status;
   const summary = truncateForHandoff(result.chatReport.trim());

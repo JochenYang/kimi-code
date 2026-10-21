@@ -1,10 +1,3 @@
-/**
- * SessionDeepResearchService unit tests with stubbed swarm / lifecycle /
- * filesystem dependencies. Verifies input validation, the swarm host
- * adapter (spawn tasks, summary-policy skip, report path), progress
- * events, cancellation, and the main-agent handoff reminder.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 
@@ -27,8 +20,6 @@ import { SessionDeepResearchService } from '#/session/deepResearch/deepResearchS
 import { DeepResearchErrors } from '#/session/deepResearch/errors';
 import type { DeepResearchResult, DeepResearchStatus } from '#/session/deepResearch/types';
 import { ISessionSwarmService, type SessionSwarmRunResult, type SessionSwarmTask } from '#/features/swarm/session/sessionSwarm';
-
-// ── Stub helpers ─────────────────────────────────────────────────────────────
 
 interface MainStubs {
   readonly snapshot: ReturnType<typeof vi.fn>;
@@ -113,8 +104,6 @@ function makeSwarmStub() {
   return { run, cancel };
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
-
 describe('SessionDeepResearchService', () => {
   let disposables: DisposableStore;
   let ix: TestInstantiationService;
@@ -177,8 +166,6 @@ describe('SessionDeepResearchService', () => {
     expect(writeText.mock.calls[0]![0]).toContain('deep-research');
     expect(writeText.mock.calls[0]![1]).toContain('## Sources');
 
-    // Swarm adapter: every task is a spawn under the main agent with the
-    // summary continuation skipped (structured JSON must stay short).
     for (const task of swarm.run.mock.calls[0]![0].tasks) {
       expect(task.kind).toBe('spawn');
       expect(task.profileName).toBe('explore');
@@ -188,12 +175,10 @@ describe('SessionDeepResearchService', () => {
       );
     }
 
-    // Progress events land on the main agent's event bus.
     const published = mainStubs.publish.mock.calls.map((c) => c[0] as { type: string; code?: string });
     expect(published.some((e) => e.type === 'warning' && e.code === 'deep-research-progress')).toBe(true);
     expect(published.some((e) => (e as unknown as { message: string }).message.startsWith('Deep research · Done'))).toBe(true);
 
-    // Handoff reminder is injected into the main agent (non-cancelled runs).
     expect(mainStubs.append).toHaveBeenCalledTimes(1);
     const [message] = mainStubs.append.mock.calls[0]!;
     expect(message.origin).toEqual({ kind: 'injection', variant: 'deep_research_handoff' });
@@ -257,15 +242,10 @@ describe('SessionDeepResearchService', () => {
 
     expect(result.status).toBe('cancelled');
     expect(mainStubs.append).not.toHaveBeenCalled();
-    // Cancelled runs still emit the final Done progress, tagged with the
-    // cancelled status (same behavior as V1).
     expect(mainStubs.publish.mock.calls.some((c) => {
       const message = (c[0] as unknown as { message: string }).message;
       return message.startsWith('Deep research · Done') && message.includes('status=cancelled');
     })).toBe(true);
-    // The abort reason must be a UserCancellationError so swarm batches
-    // settle with aborted outcomes instead of rejecting (which would
-    // surface as an unhandled rejection and crash the host).
     const signals = swarm.run.mock.calls.flatMap(
       (call) => (call[0] as { tasks: readonly { signal?: AbortSignal }[] }).tasks
         .map((task) => task.signal)
