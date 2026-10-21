@@ -220,7 +220,7 @@ describe('AgentGroupComponent', () => {
   });
 
   it('uses group wall-clock for sequential agents, not max per-agent lifetime', () => {
-    // Deep-research style: agent A runs 0→5s, agent B runs 5→15s. Header must
+    // Sequential agents: agent A runs 0→5s, agent B runs 5→15s. Header must
     // show 15s (earliest start → latest end), not max(5, 10)=10s.
     vi.useFakeTimers();
     vi.setSystemTime(0);
