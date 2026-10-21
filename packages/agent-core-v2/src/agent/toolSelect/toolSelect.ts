@@ -73,16 +73,8 @@ export interface IAgentToolSelectService {
     lastDisclosure?: ToolSelectAnnouncementDisclosure,
   ): ToolSelectAnnouncement | undefined;
 
-  /**
-   * Record that a dynamic (MCP) tool was actually invoked so post-compaction
-   * hot-reload can restore its schema without a full cold discovery.
-   */
   recordRecentToolUse(name: string): void;
 
-  /**
-   * Re-load schemas for recently used dynamic tools after full compaction.
-   * No-op when progressive disclosure is disabled or there is nothing recent.
-   */
   reloadRecentAfterCompaction(max?: number): LoadToolsResult;
 }
 

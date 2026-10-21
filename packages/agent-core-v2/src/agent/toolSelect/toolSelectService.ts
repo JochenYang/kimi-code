@@ -106,8 +106,6 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
     );
     this._register(
       eventBus.subscribe(CompactionCompleted, () => {
-        // Hot-reload recently used MCP schemas so the model does not cold-start
-        // select_tools after every full compaction.
         this.reloadRecentAfterCompaction();
       }),
     );

@@ -1,11 +1,3 @@
-/**
- * Track recently used dynamic (MCP) tools for post-compaction hot-reload.
- *
- * Full compaction clears loaded dynamic tool schemas from history. Keeping a
- * short LRU of tools the model actually called lets us re-load their schemas
- * after compact without forcing a full cold re-discovery round-trip.
- */
-
 export const DEFAULT_RECENT_DYNAMIC_TOOLS_LIMIT = 12;
 
 export class RecentDynamicToolTracker {
@@ -29,15 +21,13 @@ export class RecentDynamicToolTracker {
     }
   }
 
-  /** Most-recent last; returned as a copy in LRU order (oldest first). */
   list(): readonly string[] {
     return [...this.order];
   }
 
-  /** Newest-first names, capped. */
   recent(max: number = this.limit): readonly string[] {
     if (max <= 0) return [];
-    return this.order.slice(-max).reverse();
+    return this.order.slice(-max).toReversed();
   }
 
   clear(): void {

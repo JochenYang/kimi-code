@@ -1,10 +1,3 @@
-/**
- * Scenario: LRU of recently used dynamic tools for post-compaction hot-reload.
- *
- * Responsibilities: assert record/recent/list/clear on RecentDynamicToolTracker.
- * Wiring: pure class. Run:
- * vitest run test/agent/toolSelect/recentTools.test.ts
- */
 import { describe, expect, it } from 'vitest';
 
 import { RecentDynamicToolTracker } from '#/agent/toolSelect/recentTools';

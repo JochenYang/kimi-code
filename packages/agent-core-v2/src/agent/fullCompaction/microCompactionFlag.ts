@@ -1,10 +1,3 @@
-/**
- * Experimental micro-compaction flag (default off).
- *
- * Micro-compaction trims aged tool results without a full handoff rewrite.
- * Kept experimental: cache-prefix safety requires careful suffix-only mutation.
- */
-
 import { type FlagDefinitionInput, registerFlagDefinition } from '#/app/flag/flagRegistry';
 
 export const MICRO_COMPACTION_FLAG_ID = 'micro-compaction';
