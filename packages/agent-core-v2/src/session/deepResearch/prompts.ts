@@ -1,12 +1,4 @@
-/**
- * `deepResearch` domain — phase prompts.
- * Role + output-shape lines are inlined here (no separate system channel on
- * DeepResearchHost). Keep this file the single place for prompt text.
- */
-
 import { deepResearchJsonEncode } from "./utils";
-
-// ── Plan ─────────────────────────────────────────────────────────────────────
 
 export function buildPlanPrompt(query: string, breadth: number): string {
   return (
@@ -24,8 +16,6 @@ export function buildPlanPrompt(query: string, breadth: number): string {
     "\n</query-json>"
   );
 }
-
-// ── Research ─────────────────────────────────────────────────────────────────
 
 export function buildResearchPrompt(question: string): string {
   return (
@@ -59,8 +49,6 @@ export function buildResearchPrompt(question: string): string {
   );
 }
 
-// ── Verify ───────────────────────────────────────────────────────────────────
-
 export function buildVerifyPrompt(claimsJson: string): string {
   return (
     "You are an independent evidence verifier. Cross-check each candidate claim against " +
@@ -92,8 +80,6 @@ export function buildVerifyPrompt(claimsJson: string): string {
     "\n</candidate-claims-json>"
   );
 }
-
-// ── Report ───────────────────────────────────────────────────────────────────
 
 export function buildSynthesisPrompt(
   query: string,

@@ -102,16 +102,11 @@ export class SessionDeepResearchService implements ISessionDeepResearchService {
     };
     const orchestrator = new DeepResearchOrchestrator({ query, breadth: input.breadth }, host);
     try {
-      // Phase progress (incl. the initial Plan) is emitted by the orchestrator
-      // itself through host.onProgress; do not duplicate it here.
       const result = await orchestrator.run(controller.signal);
       reportProgress({
         phase: 'Done',
         detail: `status=${result.status}; report=${result.reportPath ?? '(in-memory)'}`,
       });
-      // Handoff into main context so the next user turn can continue from
-      // the research (summary + report path). Cancelled runs skip this.
-      // Does not start a turn — only appends for the following prompt.
       if (result.status !== 'cancelled') {
         main.accessor.get(IAgentContextMemoryService).append({
           role: 'user',
@@ -135,13 +130,8 @@ export class SessionDeepResearchService implements ISessionDeepResearchService {
   }
 
   cancel(): void {
-    // User cancellation: give the abort a UserCancellationError reason so
-    // in-flight swarm batches settle with aborted outcomes instead of
-    // rejecting (a bare abort would reject and could crash the host).
     this.current?.abort(userCancellationReason());
   }
-
-  // ── Host adapter ──────────────────────────────────────────────────────────
 
   private async runAgent(
     runScopeId: string,

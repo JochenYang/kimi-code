@@ -1,9 +1,3 @@
-/**
- * `deepResearch` domain — workflow data types and caps (pure data, no runtime
- * deps): the four-phase semantics, host interface, and result contract shared
- * by the orchestrator, its host adapter, and the session service.
- */
-
 export const DEEP_RESEARCH_DEFAULT_BREADTH = 4;
 export const DEEP_RESEARCH_MIN_BREADTH = 2;
 export const DEEP_RESEARCH_MAX_BREADTH = 6;
@@ -55,15 +49,12 @@ export interface DeepResearchVerdict {
 
 export interface DeepResearchInput {
   readonly query: string;
-  /** Independent research questions; defaults to 4, clamped to 2–6. */
   readonly breadth?: number;
 }
 
 export interface DeepResearchResult {
   readonly status: DeepResearchStatus;
-  /** Full markdown report written to scratch (includes Sources + Coverage). */
   readonly report: string;
-  /** Shorter body suitable for chat (may omit Sources). */
   readonly chatReport: string;
   readonly reportPath: string | null;
   readonly verifiedClaimIds: readonly string[];
@@ -94,10 +85,6 @@ export interface DeepResearchAgentOutcome {
   readonly agentId?: string;
 }
 
-/**
- * Host capabilities the orchestrator needs. Implemented by the deep-research
- * session service over `ISessionSwarmService`; tests inject fakes.
- */
 export interface DeepResearchHost {
   runAgent(call: DeepResearchAgentCall, signal: AbortSignal): Promise<DeepResearchAgentOutcome>;
   runParallel(

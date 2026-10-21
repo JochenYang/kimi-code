@@ -1708,7 +1708,6 @@ describe('post-compaction dynamic tool hot-reload', () => {
     select.recordRecentToolUse(MCP_ALPHA);
     select.recordRecentToolUse(MCP_BETA);
 
-    // Simulate full compaction clearing pending loaded schemas, then hot-reload.
     h.eventBus.publish(
       new CompactionCompleted({
         agentId: 'main',
@@ -1716,7 +1715,6 @@ describe('post-compaction dynamic tool hot-reload', () => {
       }),
     );
 
-    // Schemas are declared at the next step boundary via the context injector.
     const declared = await declareSchemas(h);
     expect(declared).toBeDefined();
     const names = declared?.tools?.map((tool) => tool.name) ?? [];

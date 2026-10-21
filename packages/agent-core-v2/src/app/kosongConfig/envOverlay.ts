@@ -107,8 +107,6 @@ export const kimiModelEnvOverlay: ConfigEffectiveOverlay = {
         maxCompletionTokens,
       });
       if (modelOverrides !== undefined) {
-        // Merge so TOML `[model_overrides]` (e.g. max_completion_tokens = 0)
-        // is not wiped when only a subset of KIMI_MODEL_* env knobs is set.
         effective['modelOverrides'] = {
           ...asRecord(effective['modelOverrides']),
           ...modelOverrides,
@@ -203,8 +201,6 @@ export const kimiModelEnvOverlay: ConfigEffectiveOverlay = {
         if (value !== ENV_MODEL_ALIAS_KEY) return value;
         return typeof rawSnake['default_model'] === 'string' ? rawSnake['default_model'] : undefined;
       case 'modelOverrides':
-        // Env-only knobs must not be written back into config.toml.
-        // Hand-edited `[model_overrides]` stays in rawSnake across other domain saves.
         return undefined;
       default:
         return value;

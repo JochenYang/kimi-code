@@ -1,7 +1,3 @@
-/**
- * `deepResearch` domain error codes.
- */
-
 import { registerErrorDomain, type ErrorDomain } from '#/_base/errors/codes';
 
 export const DeepResearchErrors = {

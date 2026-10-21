@@ -1,17 +1,7 @@
-/** `deepResearch` domain — utility helpers for the orchestrator (no external deps). */
-
-/**
- * JSON-encode a value for safe embedding in a prompt.
- * Unlike JSON.stringify, this escapes </script> etc. and is clearly
- * labelled as "encoded" for the model's benefit.
- */
 export function deepResearchJsonEncode(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/**
- * Validate a claim before adding it to the candidate pool.
- */
 export function isValidClaim(claim: { readonly claim?: string; readonly evidence?: string; readonly source_title?: string; readonly source_locator?: string }): boolean {
   return (
     typeof claim.claim === 'string' && claim.claim.trim().length > 0
@@ -21,10 +11,6 @@ export function isValidClaim(claim: { readonly claim?: string; readonly evidence
   );
 }
 
-/**
- * Extract content between <report-body> and </report-body> tags.
- * Returns null if the tags are not found.
- */
 export function extractReportBody(text: string): string | null {
   const openTag = '<report-body>';
   const closeTag = '</report-body>';
@@ -39,20 +25,13 @@ export function extractReportBody(text: string): string | null {
   return text.slice(contentStart, closeIdx).trim();
 }
 
-/**
- * Validate citation markers in a synthesized report body.
- * Returns true if every [Sn] marker references a valid index (1..assigned),
- * no marker is invented, and no "## Sources" or "## References" section exists.
- */
 export function validateCitations(body: string, assignedCount: number): boolean {
   if (assignedCount === 0) return true;
 
-  // Check for forbidden sections
   if (body.includes('## Sources') || body.includes('## References')) {
     return false;
   }
 
-  // Check every [Sn] marker is valid
   const markerRegex = /\[S(\d+)\]/g;
   let match: RegExpExecArray | null;
   const seen = new Set<number>();
@@ -63,7 +42,6 @@ export function validateCitations(body: string, assignedCount: number): boolean 
     seen.add(n);
   }
 
-  // Every marker must be used at least once
   for (let i = 1; i <= assignedCount; i++) {
     if (!seen.has(i)) return false;
   }
@@ -71,9 +49,6 @@ export function validateCitations(body: string, assignedCount: number): boolean 
   return true;
 }
 
-/**
- * Deduplicate source entries by their title+locator pair.
- */
 export function deduplicateSources(
   sources: ReadonlyArray<{
     readonly citations: readonly string[];

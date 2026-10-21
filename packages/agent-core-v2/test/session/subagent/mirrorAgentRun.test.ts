@@ -1,13 +1,3 @@
-/**
- * `subagent` domain — `mirrorAgentRun` caller-side mirroring tests.
- *
- * Verifies the terminal signals a requester publishes for a driven agent
- * run: `subagent.completed` on success, `subagent.failed` on ordinary
- * errors, and — critically — `subagent.failed` with the cancellation text
- * on abort, so the UI can settle the subagent card instead of spinning
- * forever.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SyncDescriptor } from '#/_base/di/descriptors';
@@ -107,7 +97,6 @@ describe('mirrorAgentRun', () => {
       }),
     ).rejects.toSatisfy((e: unknown) => e instanceof UserCancellationError);
 
-    // The UI maps 'Aborted by the user' to the cancelled card state.
     expect(events).toContainEqual({
       type: 'subagent.failed',
       subagentId: 'child-1',

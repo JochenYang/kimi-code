@@ -1,11 +1,3 @@
-/**
- * Scenario: structured compaction handoff validation and working-set evidence.
- *
- * Responsibilities: assert required sections, placeholder normalization, and
- * failure evidence extraction from real ContextMessage history shapes.
- * Wiring: pure helpers. Run:
- * vitest run test/agent/fullCompaction/handoffStructure.test.ts
- */
 import { describe, expect, it } from 'vitest';
 
 import {
