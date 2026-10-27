@@ -136,7 +136,7 @@ describe('FooterComponent status_line items', () => {
   });
 });
 
-describe('runStatusLineCommand', () => {
+describe.skipIf(process.platform === 'win32')('runStatusLineCommand', () => {
   it('passes the payload as JSON on stdin and returns the first stdout line', async () => {
     const line = await runStatusLineCommand('cat', payload);
 
@@ -177,7 +177,7 @@ describe('runStatusLineCommand', () => {
   });
 });
 
-describe('FooterComponent status_line command', () => {
+describe.skipIf(process.platform === 'win32')('FooterComponent status_line command', () => {
   it('passes the remote binding cwd and suppresses the local git branch', async () => {
     const dir = join(tmpdir(), `sl-remote-cwd-${process.pid}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(dir, { recursive: true });
@@ -235,7 +235,7 @@ describe('FooterComponent status_line command', () => {
   });
 });
 
-describe('StatusLineCommandRunner', () => {
+describe.skipIf(process.platform === 'win32')('StatusLineCommandRunner', () => {
   it('caches the last good line and coalesces refreshes in the same interval', async () => {
     const runner = new StatusLineCommandRunner('printf "x"', () => {});
 
