@@ -1,6 +1,6 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { TestInstantiationService } from '#/_base/di/test';
@@ -88,7 +88,7 @@ describe('ToolResultTruncationService', () => {
     expect(outputPath).toContain(
       join(
         homeDir,
-        'sessions/workspace/session/agents/main/tool-results/Lookup_Tool-call_lookup-',
+        ...'sessions/workspace/session/agents/main/tool-results/Lookup_Tool-call_lookup-'.split('/'),
       ),
     );
     await expect(readFile(outputPath, 'utf8')).resolves.toBe(fullOutput);
@@ -523,5 +523,5 @@ function renderedOutputPath(output: unknown): string {
   if (typeof output !== 'string') throw new Error('expected rendered output to be a string');
   const match = /^output_path: (.+)$/m.exec(output);
   if (match === null) throw new Error('expected rendered output to include output_path');
-  return match[1]!;
+  return resolve(match[1]!);
 }

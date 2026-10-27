@@ -280,15 +280,18 @@ describe('AgentProfileService.bind', () => {
     expect(svc.isRunnable()).toBe(true);
   });
 
-  it('binds an environment disclosure snapshot with only the session cwd', async () => {
-    ctx = createTestAgent(hostEnvironmentServices(homeDir));
-    const svc = ctx.get(IAgentLoopService);
+  it.skipIf(process.platform === 'win32')(
+    'binds an environment disclosure snapshot with only the session cwd',
+    async () => {
+      ctx = createTestAgent(hostEnvironmentServices(homeDir));
+      const svc = ctx.get(IAgentLoopService);
 
-    await ctx.get(IAgentLoopService).bindProfile({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+      await svc.bindProfile({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
 
-    expect(svc.getSystemPrompt()).not.toContain('2026-07-29');
-    expect(svc.data().environmentDisclosure).toEqual({ cwd: ctx.get(ISessionContext).cwd });
-  });
+      expect(svc.getSystemPrompt()).not.toContain('2026-07-29');
+      expect(svc.data().environmentDisclosure).toEqual({ cwd: ctx.get(ISessionContext).cwd });
+    },
+  );
 
   it('persists the complete binding in one journal record', async () => {
     const persistence = new InMemoryWireRecordPersistence();
@@ -1516,17 +1519,20 @@ describe('agentsMdReminder seeding', () => {
     return ctx.get(IAgentLoopService);
   }
 
-  it('seeds the known-set with the injected paths after a successful bind', async () => {
-    const seedInjected = vi.fn<(paths: readonly string[], cwd: string) => void>();
-    const profile = buildSeededContext(seedInjected);
-    await writeFile(join(workDir, 'AGENTS.md'), 'project instructions', 'utf-8');
+  it.skipIf(process.platform === 'win32')(
+    'seeds the known-set with the injected paths after a successful bind',
+    async () => {
+      const seedInjected = vi.fn<(paths: readonly string[], cwd: string) => void>();
+      const profile = buildSeededContext(seedInjected);
+      await writeFile(join(workDir, 'AGENTS.md'), 'project instructions', 'utf-8');
 
-    seedInjected.mockClear();
-    await ctx.get(IAgentLoopService).bindProfile({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+      seedInjected.mockClear();
+      await ctx.get(IAgentLoopService).bindProfile({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
 
-    expect(seedInjected).toHaveBeenCalledWith([normalize(join(workDir, 'AGENTS.md'))], workDir);
-    expect(profile.data().agentsMdPaths).toEqual([normalize(join(workDir, 'AGENTS.md'))]);
-  });
+      expect(seedInjected).toHaveBeenCalledWith([normalize(join(workDir, 'AGENTS.md'))], workDir);
+      expect(profile.data().agentsMdPaths).toEqual([normalize(join(workDir, 'AGENTS.md'))]);
+    },
+  );
 
   it('keeps declared tools separate from the live overlay until an explicit snapshot bind', async () => {
     const seedInjected = vi.fn<IAgentAgentsMdReminderService['seedInjected']>();

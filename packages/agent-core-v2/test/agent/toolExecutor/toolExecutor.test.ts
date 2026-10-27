@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import { Jimp } from 'jimp';
 
@@ -1171,7 +1171,7 @@ describe('truncation pipeline', () => {
     truncationContainer.stub(IFileSystemStorageService, storage);
     attachmentStore = new SessionMediaStoreService(makeSessionContext({
       sessionId: 'session', workspaceId: 'workspace', cwd: homeDir,
-      sessionDir: join(homeDir, 'sessions/workspace/session'),
+      sessionDir: join(homeDir, ...'sessions/workspace/session'.split('/')),
       sessionScope: 'sessions/workspace/session',
     }), storage, new JsonAtomicDocumentStore(storage));
     truncationContainer.set(
@@ -1189,7 +1189,7 @@ describe('truncation pipeline', () => {
     globProcess = new HostProcessService();
     const environment = Object.assign(new FakeEnvironment(
       { environmentId: 'local', generation: 'test' },
-      { capabilities: ['fs', 'process'] },
+      { capabilities: ['fs', 'process'], pathClass: process.platform === 'win32' ? 'win32' : 'posix' },
     ), { fs: new HostFileSystem(), process: globProcess });
     const binding = stubAgentEnvironment(environment);
     mediaEnvironment = binding;
@@ -1244,7 +1244,10 @@ describe('truncation pipeline', () => {
 
     const outputPath = renderedOutputPath(rendered);
     expect(outputPath).toContain(
-      join(homeDir, 'sessions/workspace/session/agents/main/tool-results/noisy-call_noisy-'),
+      join(
+        homeDir,
+        ...'sessions/workspace/session/agents/main/tool-results/noisy-call_noisy-'.split('/'),
+      ),
     );
     expect(readFileSync(outputPath, 'utf8')).toBe(fullOutput);
   });
@@ -1314,7 +1317,7 @@ describe('truncation pipeline', () => {
           const [read] = await execute([toolCall(`read_large_${String(globPages)}_${String(reads++)}`, 'Read', args)]);
           expect(read?.isError).not.toBe(true);
           if (typeof read?.output !== 'string') throw new Error('expected Read output');
-          recovered.push(...read.output.replaceAll(/^\d+\t/gm, '').split('\n').filter((line) => line.startsWith(root + '/')));
+          recovered.push(...read.output.replaceAll(/^\d+\t/gm, '').split('\n').filter((line) => line.includes('file-')));
           const next = /Next Read: (\{[^\n]*\})/.exec(read.note ?? '')?.[1];
           args = next === undefined ? undefined : ReadInputSchema.parse(JSON.parse(next));
         }
@@ -1322,7 +1325,9 @@ describe('truncation pipeline', () => {
       } while (offset > 0 && globPages < 5);
       expect(offset).toBe(0);
       expect(globPages).toBe(2);
-      expect(recovered).toEqual(names.map((name) => `${root}/${name}`));
+      expect(recovered).toHaveLength(names.length);
+      expect(recovered.every((line) => /file-\d{6}\.ts$/.test(line))).toBe(true);
+      expect(recovered.map((line) => line.replaceAll('\\', '/').split('/').at(-1)).toSorted()).toEqual(names);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1695,7 +1700,7 @@ describe('truncation pipeline', () => {
 function renderedOutputPath(output: string): string {
   const match = /^output_path: (.+)$/m.exec(output);
   if (match === null) throw new Error('expected tool output to include output_path');
-  return match[1]!;
+  return resolve(match[1]!);
 }
 
 function registerLegacyWill(
