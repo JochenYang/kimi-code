@@ -66,6 +66,20 @@ let disposables: DisposableStore;
 let homeDir: string;
 let workDir: string;
 
+async function probeSymlinkSupport(): Promise<boolean> {
+  const probeDir = await mkdtemp(join(tmpdir(), 'kimi-reminder-symlink-'));
+  try {
+    await symlink(join(probeDir, 'target'), join(probeDir, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
+}
+
+const symlinksSupported = await probeSymlinkSupport();
+
 beforeEach(async () => {
   disposables = new DisposableStore();
   homeDir = await mkdtemp(join(tmpdir(), 'kimi-reminder-home-'));
@@ -1061,7 +1075,7 @@ describe('agentsMdReminder probing boundaries', () => {
     }
   });
 
-  it('discovers a symlinked directory through the link at its lexical address', async () => {
+  it.skipIf(!symlinksSupported)('discovers a symlinked directory through the link at its lexical address', async () => {
     const h = createHarness();
     const target = await mkdtemp(join(tmpdir(), 'kimi-reminder-target-'));
     const targetAgentsMd = await writeAgentsMd(target, 'target instructions');

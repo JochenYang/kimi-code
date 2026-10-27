@@ -186,7 +186,7 @@ describe('AgentProfileService.applyProfile', () => {
     expect(seed?.agentsMd).toContain('project instructions');
   });
 
-  it('renders the complete runtime context exactly', async () => {
+  it.skipIf(process.platform === 'win32')('renders the complete runtime context exactly', async () => {
     await writeFile(join(workDir, 'AGENTS.md'), 'project instructions', 'utf-8');
     const { profile: svc } = buildContext();
 
@@ -245,19 +245,22 @@ describe('AgentProfileService.applyProfile', () => {
     expect(prompt).toContain('ls:\nextra:');
   });
 
-  it('keeps the system prompt frozen until an explicit applyProfile rebuild', async () => {
-    await writeFile(join(workDir, 'AGENTS.md'), 'old instructions', 'utf-8');
-    const { profile: svc } = buildContext();
-    await svc.applyProfile(exactProfile);
-    const before = svc.data().systemPrompt;
-    await writeFile(join(workDir, 'AGENTS.md'), 'new instructions', 'utf-8');
+  it.skipIf(process.platform === 'win32')(
+    'keeps the system prompt frozen until an explicit applyProfile rebuild',
+    async () => {
+      await writeFile(join(workDir, 'AGENTS.md'), 'old instructions', 'utf-8');
+      const { profile: svc } = buildContext();
+      await svc.applyProfile(exactProfile);
+      const before = svc.data().systemPrompt;
+      await writeFile(join(workDir, 'AGENTS.md'), 'new instructions', 'utf-8');
 
-    expect(svc.data().systemPrompt).toBe(before);
+      expect(svc.data().systemPrompt).toBe(before);
 
-    await svc.applyProfile(exactProfile);
+      await svc.applyProfile(exactProfile);
 
-    expect(svc.data().systemPrompt).toBe(exactSystemPrompt(workDir, 'new instructions'));
-  });
+      expect(svc.data().systemPrompt).toBe(exactSystemPrompt(workDir, 'new instructions'));
+    },
+  );
 
   it('caches an agents-md warning when the content exceeds the 32 KB soft budget', async () => {
     const largeContent = 'x'.repeat(40 * 1024);

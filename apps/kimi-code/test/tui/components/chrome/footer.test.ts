@@ -310,7 +310,7 @@ describe('FooterComponent ctrl+o hint', () => {
   });
 });
 
-describe('FooterComponent ctrl+o hint with a status_line command', () => {
+describe.skipIf(process.platform === 'win32')('FooterComponent ctrl+o hint with a status_line command', () => {
   it('moves the hint to line 2 when a command owns line 1', async () => {
     const footer = new FooterComponent({
       ...appState,

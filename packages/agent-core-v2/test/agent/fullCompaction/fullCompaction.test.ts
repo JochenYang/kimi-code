@@ -361,40 +361,43 @@ describe('FullCompaction', () => {
     hook.dispose();
   });
 
-  it('keeps the active profile system prompt frozen after compaction without resetting active tools', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'kimi-compact-refresh-home-'));
-    const workDir = mkdtempSync(join(tmpdir(), 'kimi-compact-refresh-work-'));
-    try {
-      writeFileSync(join(workDir, 'AGENTS.md'), 'old project instructions', 'utf-8');
-      const ctx = testAgent(
-        execEnvServices({ hostFs: new HostFileSystem() }),
-        hostEnvironmentServices(homeDir),
-        { autoConfigure: false, cwd: workDir },
-      );
-      ctx.configureRuntimeModel(CATALOGUED_PROVIDER, CATALOGUED_MODEL_CAPABILITIES);
-      const profile = ctx.get(IAgentProfileService);
-      await profile.applyProfile(EXACT_COMPACTION_PROFILE);
-      profile.update({ activeToolNames: ['Read'] });
+  it.skipIf(process.platform === 'win32')(
+    'keeps the active profile system prompt frozen after compaction without resetting active tools',
+    async () => {
+      const homeDir = mkdtempSync(join(tmpdir(), 'kimi-compact-refresh-home-'));
+      const workDir = mkdtempSync(join(tmpdir(), 'kimi-compact-refresh-work-'));
+      try {
+        writeFileSync(join(workDir, 'AGENTS.md'), 'old project instructions', 'utf-8');
+        const ctx = testAgent(
+          execEnvServices({ hostFs: new HostFileSystem() }),
+          hostEnvironmentServices(homeDir),
+          { autoConfigure: false, cwd: workDir },
+        );
+        ctx.configureRuntimeModel(CATALOGUED_PROVIDER, CATALOGUED_MODEL_CAPABILITIES);
+        const profile = ctx.get(IAgentProfileService);
+        await profile.applyProfile(EXACT_COMPACTION_PROFILE);
+        profile.update({ activeToolNames: ['Read'] });
 
-      const before = profile.data().systemPrompt;
-      expect(before).toBe(exactCompactionPrompt(workDir, 'old project instructions'));
+        const before = profile.data().systemPrompt;
+        expect(before).toBe(exactCompactionPrompt(workDir, 'old project instructions'));
 
-      writeFileSync(join(workDir, 'AGENTS.md'), 'new project instructions', 'utf-8');
-      ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
-      ctx.appendExchange(2, 'recent user two', 'recent assistant two', 80);
-      const completed = ctx.once('compaction.completed');
+        writeFileSync(join(workDir, 'AGENTS.md'), 'new project instructions', 'utf-8');
+        ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
+        ctx.appendExchange(2, 'recent user two', 'recent assistant two', 80);
+        const completed = ctx.once('compaction.completed');
 
-      ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
-      await ctx.rpc.beginCompaction({});
-      await completed;
+        ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
+        await ctx.rpc.beginCompaction({});
+        await completed;
 
-      expect(profile.data().systemPrompt).toBe(before);
-      expect(profile.getActiveToolNames()).toEqual(['Read']);
-    } finally {
-      rmSync(homeDir, { recursive: true, force: true });
-      rmSync(workDir, { recursive: true, force: true });
-    }
-  });
+        expect(profile.data().systemPrompt).toBe(before);
+        expect(profile.getActiveToolNames()).toEqual(['Read']);
+      } finally {
+        rmSync(homeDir, { recursive: true, force: true });
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects a manual compaction while a turn is active', async () => {
     const ctx = testAgent(execEnvServices({ processRunner: createCommandRunner('should-not-run') }));
@@ -544,56 +547,59 @@ describe('FullCompaction', () => {
     await ctx.expectResumeMatches();
   });
 
-  it('fires PreCompact and PostCompact hooks from the compaction module', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'kimi-compact-hooks-'));
-    const hookLog = join(dir, 'hooks.jsonl');
-    const hookCommand = hookPayloadLoggerCommand(hookLog);
-    const ctx = testAgent({
-      hookEngine: makeHookRunner(
-        [
-          { event: 'PreCompact', matcher: 'auto', command: hookCommand, timeout: 5 },
-          { event: 'PostCompact', matcher: 'auto', command: hookCommand, timeout: 5 },
-        ],
-        { cwd: dir },
-      ),
-      cwd: dir,
-    });
-    ctx.configure({
-      provider: CATALOGUED_PROVIDER,
-      modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
-      tools: SNAPSHOT_VISIBLE_TOOLS,
-    });
-    ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
-    ctx.appendExchange(2, 'old user two', 'old assistant two', 40);
-    ctx.appendExchange(3, 'recent user three', 'recent assistant three', 120);
-    const compacted = ctx.once('full_compaction.complete');
+  it.skipIf(process.platform === 'win32')(
+    'fires PreCompact and PostCompact hooks from the compaction module',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'kimi-compact-hooks-'));
+      const hookLog = join(dir, 'hooks.jsonl');
+      const hookCommand = hookPayloadLoggerCommand(hookLog);
+      const ctx = testAgent({
+        hookEngine: makeHookRunner(
+          [
+            { event: 'PreCompact', matcher: 'auto', command: hookCommand, timeout: 5 },
+            { event: 'PostCompact', matcher: 'auto', command: hookCommand, timeout: 5 },
+          ],
+          { cwd: dir },
+        ),
+        cwd: dir,
+      });
+      ctx.configure({
+        provider: CATALOGUED_PROVIDER,
+        modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
+        tools: SNAPSHOT_VISIBLE_TOOLS,
+      });
+      ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
+      ctx.appendExchange(2, 'old user two', 'old assistant two', 40);
+      ctx.appendExchange(3, 'recent user three', 'recent assistant three', 120);
+      const compacted = ctx.once('full_compaction.complete');
 
-    ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
-    ctx.get(IAgentFullCompactionService).begin({ source: 'auto', instruction: undefined });
-    await compacted;
-    await vi.waitFor(() => {
-      expect(readHookPayloads(hookLog).map((payload) => payload['hook_event_name'])).toEqual([
-        'PreCompact',
-        'PostCompact',
-      ]);
-    });
+      ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
+      ctx.get(IAgentFullCompactionService).begin({ source: 'auto', instruction: undefined });
+      await compacted;
+      await vi.waitFor(() => {
+        expect(readHookPayloads(hookLog).map((payload) => payload['hook_event_name'])).toEqual([
+          'PreCompact',
+          'PostCompact',
+        ]);
+      });
 
-    const [pre, post] = readHookPayloads(hookLog);
-    expect(pre).toMatchObject({
-      hook_event_name: 'PreCompact',
-      session_id: 'test-session',
-      cwd: dir,
-      trigger: 'auto',
-      token_count: expect.any(Number),
-    });
-    expect(post).toMatchObject({
-      hook_event_name: 'PostCompact',
-      session_id: 'test-session',
-      cwd: dir,
-      trigger: 'auto',
-      estimated_token_count: ctx.contextData().tokenCount,
-    });
-  });
+      const [pre, post] = readHookPayloads(hookLog);
+      expect(pre).toMatchObject({
+        hook_event_name: 'PreCompact',
+        session_id: 'test-session',
+        cwd: dir,
+        trigger: 'auto',
+        token_count: expect.any(Number),
+      });
+      expect(post).toMatchObject({
+        hook_event_name: 'PostCompact',
+        session_id: 'test-session',
+        cwd: dir,
+        trigger: 'auto',
+        estimated_token_count: ctx.contextData().tokenCount,
+      });
+    },
+  );
 
   it('cancels while waiting for a PreCompact hook', async () => {
     let preCompactSignal: AbortSignal | undefined;

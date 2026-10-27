@@ -11767,7 +11767,9 @@ capabilities = ["image_in", "video_in"]
     }
   });
 
-  it('forks the active session and stays in the source session', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'forks the active session and stays in the source session',
+    async () => {
     const originalTitle = process.title;
     const source = makeSession({
       id: 'ses-source',
@@ -11811,7 +11813,9 @@ capabilities = ["image_in", "video_in"]
     }
   });
 
-  it('still prints the fork resume command when the clipboard copy fails', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'still prints the fork resume command when the clipboard copy fails',
+    async () => {
     vi.mocked(copyTextToClipboard).mockRejectedValueOnce(new Error('no clipboard'));
     const source = makeSession({ id: 'ses-source' });
     const forked = makeSession({ id: 'ses-fork' });

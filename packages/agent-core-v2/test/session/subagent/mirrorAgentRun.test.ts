@@ -8,6 +8,7 @@ import { IEventBus } from '#/app/event/eventBus';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import type { IAgentScopeHandle } from '#/_base/di/scope';
 import { mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
+import { IEventDispatcher } from '#/state/eventDispatcher';
 import { ISessionSubagentService, type AgentRunHandle } from '#/session/subagent/subagent';
 
 function makeRequester(events: unknown[]): IAgentScopeHandle {
@@ -17,10 +18,20 @@ function makeRequester(events: unknown[]): IAgentScopeHandle {
     accessor: {
       get: (id: unknown) => {
         if (id === IEventBus) return { publish: (event: unknown) => events.push(event) };
+        if (id === IEventDispatcher) {
+          return {
+            dispatch: async (event: unknown) => {
+              const { time: _time, ...rest } = event as Record<string, unknown>;
+              events.push(rest);
+            },
+          };
+        }
         if (id === ISessionSubagentService) {
           return { hooks: { onWillStartAgentTask: { run: async () => undefined } }, notifyAgentTaskStopped: vi.fn() };
         }
-        if (id === IAgentLifecycleService) return { get: () => undefined };
+        if (id === IAgentLifecycleService) {
+          return { get: () => undefined, handleOf: () => undefined };
+        }
         return undefined;
       },
     },
@@ -85,7 +96,7 @@ describe('mirrorAgentRun', () => {
     });
   });
 
-  it('publishes subagent.failed with the cancellation text on user abort', async () => {
+  it('publishes subagent.cancelled with the cancellation text on user abort', async () => {
     const requester = makeRequester(events);
     const signal = new AbortController().signal;
     const run = makeRunHandle(undefined, new UserCancellationError());
@@ -98,13 +109,12 @@ describe('mirrorAgentRun', () => {
     ).rejects.toSatisfy((e: unknown) => e instanceof UserCancellationError);
 
     expect(events).toContainEqual({
-      type: 'subagent.failed',
+      type: 'subagent.cancelled',
       subagentId: 'child-1',
-      error: 'Aborted by the user',
     });
   });
 
-  it('publishes subagent.failed on a non-user abort error', async () => {
+  it('publishes subagent.cancelled on a non-user abort error', async () => {
     const requester = makeRequester(events);
     const run = makeRunHandle(undefined, abortError('Agent removed'));
     await expect(
@@ -116,9 +126,8 @@ describe('mirrorAgentRun', () => {
     ).rejects.toSatisfy((e: unknown) => (e as Error).name === 'AbortError');
 
     expect(events).toContainEqual({
-      type: 'subagent.failed',
+      type: 'subagent.cancelled',
       subagentId: 'child-1',
-      error: 'Agent removed',
     });
   });
 });

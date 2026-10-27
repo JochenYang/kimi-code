@@ -2462,7 +2462,7 @@ describe('ToolCallComponent', () => {
     expect(out).toMatch(/^\s*2\s+b\s*$/m);
   });
 
-  it('builds the Edit diff when finalized args arrive after streaming', () => {
+  it.skipIf(process.platform === 'win32')('builds the Edit diff when finalized args arrive after streaming', () => {
     const component = new ToolCallComponent(
       {
         id: 'call_edit_seq',

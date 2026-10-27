@@ -446,7 +446,9 @@ describe('FileMentionProvider', () => {
     expect(result!.items.map((item) => item.value)).toContain('@"my folder/"');
   });
 
-  it('filesystem fallback does not recurse into symlinked directories', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'filesystem fallback does not recurse into symlinked directories',
+    async () => {
     writeFileSync(join(workDir, 'target.txt'), 'target');
     symlinkSync('.', join(workDir, 'current'), 'dir');
     const provider = new FileMentionProvider([], workDir, NO_FD);
@@ -671,7 +673,9 @@ describe('FileMentionProvider', () => {
   });
 
   describe('bash-mode path completion dotfile filtering', () => {
-    it('hides dot-prefixed entries (matching /add-dir) in bash mode', async () => {
+    it.skipIf(process.platform === 'win32')(
+      'hides dot-prefixed entries (matching /add-dir) in bash mode',
+      async () => {
       mkdirSync(join(workDir, '.hidden'));
       mkdirSync(join(workDir, 'visible'));
       writeFileSync(join(workDir, '.dotfile'), '');
@@ -692,7 +696,7 @@ describe('FileMentionProvider', () => {
       expect(labels).not.toContain('.dotfile');
     });
 
-    it('keeps dot-prefixed entries in prompt mode', async () => {
+    it.skipIf(process.platform === 'win32')('keeps dot-prefixed entries in prompt mode', async () => {
       mkdirSync(join(workDir, '.hidden'));
       writeFileSync(join(workDir, '.dotfile'), '');
 

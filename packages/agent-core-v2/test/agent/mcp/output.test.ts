@@ -966,12 +966,13 @@ describe('createMcpTool', () => {
 
 describe('mcpResultToExecutableOutput over a real stdio server', () => {
   const fixture = join(import.meta.dirname, '../../mcpCore/fixtures/structured-content-stdio-server.mjs');
+  const nativePathClass = process.platform === 'win32' ? 'win32' : 'posix';
 
   async function callFixtureTool(name: string) {
     const runtime = Object.assign(
       new FakeRuntime(
         { workspaceId: 'workspace', runtimeId: 'local', generation: 'test' },
-        { capabilities: ['process'] },
+        { capabilities: ['process'], pathClass: nativePathClass },
       ),
       { process: new HostProcessService() },
     );
