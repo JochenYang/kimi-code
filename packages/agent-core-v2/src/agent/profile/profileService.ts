@@ -1010,7 +1010,7 @@ export function expandHeaderPlaceholders(
   const expanded: Record<string, string> = {};
   let changed = false;
   for (const [name, value] of Object.entries(headers)) {
-    const next = value.replaceAll('{session_id}', vars.session_id);
+    const next = value.replaceAll(/\{session_id\}/gi, vars.session_id);
     if (next !== value) {
       expanded[name] = next;
       changed = true;
