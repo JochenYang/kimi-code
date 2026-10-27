@@ -95,9 +95,8 @@ describe('AgentTaskPersistence', () => {
     expect(() => persistence.taskOutputFile('../etc/passwd')).toThrow(/Invalid task id/);
   });
 
-  it('creates the output tasks dir with mode 0700', async () => {
+  it.skipIf(process.platform === 'win32')('creates the output tasks dir with mode 0700', async () => {
     await persistence.appendTaskOutput('bash-11111111', 'output');
-
     const st = await stat(join(sessionDir, SESSION_SCOPE, 'tasks'));
     expect(st.mode & 0o777).toBe(0o700);
   });

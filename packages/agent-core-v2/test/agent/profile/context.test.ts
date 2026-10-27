@@ -22,6 +22,20 @@ let homeDir: string;
 let workDir: string;
 let extraDirs: string[];
 
+async function probeSymlinkSupport(): Promise<boolean> {
+  const probeDir = await mkdtemp(join(tmpdir(), 'kimi-agents-symlink-'));
+  try {
+    await symlink(join(probeDir, 'target'), join(probeDir, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
+}
+
+const symlinksSupported = await probeSymlinkSupport();
+
 beforeEach(async () => {
   homeDir = await mkdtemp(join(tmpdir(), 'kimi-agents-home-'));
   workDir = await mkdtemp(join(tmpdir(), 'kimi-agents-work-'));
@@ -81,7 +95,7 @@ describe('loadAgentsMd user-level discovery', () => {
 });
 
 describe('loadAgentsMd symlinked files', () => {
-  it('follows symlinks when loading user-level and project-level AGENTS.md', async () => {
+  it.skipIf(!symlinksSupported)('follows symlinks when loading user-level and project-level AGENTS.md', async () => {
     const targetDir = await mkdtemp(join(tmpdir(), 'kimi-agents-target-'));
     extraDirs.push(targetDir);
     const brandTarget = join(targetDir, 'brand-AGENTS.md');
@@ -101,7 +115,7 @@ describe('loadAgentsMd symlinked files', () => {
 });
 
 describe('loadAgentsMd unreadable paths', () => {
-  it('warns when an instruction file exists but is a dangling symlink', async () => {
+  it.skipIf(!symlinksSupported)('warns when an instruction file exists but is a dangling symlink', async () => {
     const brandHome = await mkdtemp(join(tmpdir(), 'kimi-agents-brand-'));
     extraDirs.push(brandHome);
     await symlink(join(workDir, 'missing-target.md'), join(workDir, 'AGENTS.md'));
