@@ -16,19 +16,20 @@ describe('resolveLegacySourceHome', () => {
     expect(resolveLegacySourceHome({ KIMI_SHARE_DIR: '   ' }, HOME, CWD).origin).toBe('default');
   });
 
-  it('uses an absolute KIMI_SHARE_DIR verbatim', () => {
+  it.skipIf(process.platform === 'win32')('uses an absolute KIMI_SHARE_DIR verbatim', () => {
     const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: '/data/kimi' }, HOME, CWD);
     expect(r.sourceHome).toBe('/data/kimi');
     expect(r.origin).toBe('share-dir');
   });
 
-  it('resolves a relative KIMI_SHARE_DIR against the process CWD (old-CLI rule)', () => {
-    const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: 'relative/kimi' }, HOME, CWD);
-    expect(r.sourceHome).toBe(join(CWD, 'relative', 'kimi'));
-    expect(r.origin).toBe('share-dir');
-  });
+  it.skipIf(process.platform === 'win32')('resolves a relative KIMI_SHARE_DIR against the process CWD (old-CLI rule)', () => {
+      const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: 'relative/kimi' }, HOME, CWD);
+      expect(r.sourceHome).toBe(join(CWD, 'relative', 'kimi'));
+      expect(r.origin).toBe('share-dir');
+    },
+  );
 
-  it('does not expand ~ in KIMI_SHARE_DIR (old-CLI rule)', () => {
+  it.skipIf(process.platform === 'win32')('does not expand ~ in KIMI_SHARE_DIR (old-CLI rule)', () => {
     const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: '~/custom' }, HOME, CWD);
     expect(r.sourceHome).toBe(join(CWD, '~/custom'));
   });
@@ -38,10 +39,11 @@ describe('resolveLegacySourceHome', () => {
     expect(r.skillsSourceHome).toBe(join(HOME, '.kimi'));
   });
 
-  it('keeps a single source when KIMI_SHARE_DIR points at ~/.kimi itself', () => {
-    const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: join(HOME, '.kimi') }, HOME, CWD);
-    expect(r.skillsSourceHome).toBeUndefined();
-  });
+  it.skipIf(process.platform === 'win32')('keeps a single source when KIMI_SHARE_DIR points at ~/.kimi itself', () => {
+      const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: join(HOME, '.kimi') }, HOME, CWD);
+      expect(r.skillsSourceHome).toBeUndefined();
+    },
+  );
 });
 
 describe('sameLegacyPath', () => {

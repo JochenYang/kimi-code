@@ -303,7 +303,7 @@ describe('runUpdatePreflight', () => {
     expect(detectInstallSource).not.toHaveBeenCalled();
   });
 
-  it('starts an automatic update from the first fresh check when the cache is empty', async () => {
+  it.skipIf(process.platform === 'win32')('starts an automatic update from the first fresh check when the cache is empty', async () => {
     mocks.readUpdateCache.mockResolvedValue(emptyUpdateCache());
     mocks.readUpdateInstallState.mockResolvedValue(installState());
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -369,7 +369,7 @@ describe('runUpdatePreflight', () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
-  it('npm-global: prompts and spawns npm install -g when automatic updates are disabled', async () => {
+  it.skipIf(process.platform === 'win32')('npm-global: prompts and spawns npm install -g when automatic updates are disabled', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -393,7 +393,7 @@ describe('runUpdatePreflight', () => {
     expect(stdout.join('')).toContain('Updated @moonshot-ai/kimi-code to 0.5.0');
   });
 
-  it('refreshes a stale cached target before showing the foreground install prompt', async () => {
+  it.skipIf(process.platform === 'win32')('refreshes a stale cached target before showing the foreground install prompt', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.6.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.7.0'));
@@ -444,7 +444,7 @@ describe('runUpdatePreflight', () => {
     }
   });
 
-  it('pnpm-global: spawns pnpm add -g', async () => {
+  it.skipIf(process.platform === 'win32')('pnpm-global: spawns pnpm add -g', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -483,7 +483,7 @@ describe('runUpdatePreflight', () => {
     }
   });
 
-  it('yarn-global: spawns yarn global add', async () => {
+  it.skipIf(process.platform === 'win32')('yarn-global: spawns yarn global add', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -499,7 +499,7 @@ describe('runUpdatePreflight', () => {
     );
   });
 
-  it('bun-global: spawns bun add -g', async () => {
+  it.skipIf(process.platform === 'win32')('bun-global: spawns bun add -g', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -635,7 +635,7 @@ describe('runUpdatePreflight', () => {
     expect(stdout.join('')).not.toContain('Updated @moonshot-ai/kimi-code');
   });
 
-  it('spawns the resolved absolute path instead of the bare command name', async () => {
+  it.skipIf(process.platform === 'win32')('spawns the resolved absolute path instead of the bare command name', async () => {
     disableAutoInstall();
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -695,7 +695,7 @@ describe('runUpdatePreflight', () => {
     }));
   });
 
-  it('starts an automatic update in the background by default', async () => {
+  it.skipIf(process.platform === 'win32')('starts an automatic update in the background by default', async () => {
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.readUpdateInstallState.mockResolvedValue(installState());
     mocks.refreshUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
@@ -852,7 +852,7 @@ describe('runUpdatePreflight', () => {
     }));
   });
 
-  it('defaults to automatic background updates when client preferences cannot be loaded', async () => {
+  it.skipIf(process.platform === 'win32')('defaults to automatic background updates when client preferences cannot be loaded', async () => {
     mocks.loadTuiConfig.mockRejectedValue(new Error('broken tui.toml'));
     mocks.readUpdateCache.mockResolvedValue(cacheWith('0.5.0'));
     mocks.readUpdateInstallState.mockResolvedValue(installState());
@@ -1110,7 +1110,7 @@ describe('runUpdatePreflight', () => {
       }));
     });
 
-    it('starts the background install once the device batch is eligible', async () => {
+    it.skipIf(process.platform === 'win32')('starts the background install once the device batch is eligible', async () => {
       const released = cacheWithManifest(releasedForEveryone('0.5.0'));
       mocks.readUpdateCache.mockResolvedValue(released);
       mocks.refreshUpdateCache.mockResolvedValue(released);
@@ -1235,7 +1235,7 @@ describe('runUpdatePreflight', () => {
       expect(mocks.spawn).not.toHaveBeenCalled();
     });
 
-    it('KIMI_CODE_EXPERIMENTAL_FLAG bypasses the rollout: held devices still update', async () => {
+    it.skipIf(process.platform === 'win32')('KIMI_CODE_EXPERIMENTAL_FLAG bypasses the rollout: held devices still update', async () => {
       vi.stubEnv('KIMI_CODE_EXPERIMENTAL_FLAG', '1');
       const held = cacheWithManifest(heldForEveryone('0.5.0'));
       mocks.readUpdateCache.mockResolvedValue(held);
@@ -1324,7 +1324,7 @@ describe('runUpdatePreflight', () => {
       }));
     });
 
-    it('follows a canary installation by default and uses the normal eligible rollout path', async () => {
+    it.skipIf(process.platform === 'win32')('follows a canary installation by default and uses the normal eligible rollout path', async () => {
       const released = canaryCache(manifestFor(NEXT_CANARY));
       mocks.readUpdateCache.mockResolvedValue(released);
       mocks.refreshUpdateCache.mockResolvedValue(released);

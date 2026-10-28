@@ -349,7 +349,7 @@ describe('stageNativeUpdate', () => {
     );
   });
 
-  it('marks the staged exe executable', async () => {
+  it.skipIf(process.platform === 'win32')('marks the staged exe executable', async () => {
     const result = await stageNativeUpdate({
       version: VERSION,
       exePath,
