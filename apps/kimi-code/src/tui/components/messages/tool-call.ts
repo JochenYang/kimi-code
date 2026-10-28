@@ -550,11 +550,42 @@ function formatSubagentLabel(agentName: string | undefined): string {
 
 function tailNonEmptyLines(text: string, maxLines: number): string[] {
   if (text.length === 0) return [];
-  return text
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .slice(-maxLines);
+  const lines: string[] = [];
+  let end = text.length;
+  while (end > 0 && lines.length < maxLines) {
+    const start = text.lastIndexOf('\n', end - 1);
+    const line = text.slice(start + 1, end).trimEnd();
+    if (line.trim().length > 0) lines.push(line);
+    end = start === -1 ? 0 : start;
+  }
+  return lines.toReversed();
+}
+
+/**
+ * The last `maxLines` source lines without splitting the whole string —
+ * the cards below only ever show a two-row window, so scanning back from the
+ * end keeps the cost proportional to what is displayed rather than to the
+ * accumulated subagent output.
+ */
+function tailSourceLines(text: string, maxLines: number): string {
+  let end = text.length;
+  for (let seen = 0; seen < maxLines; seen++) {
+    const start = text.lastIndexOf('\n', end - 1);
+    if (start === -1) return text;
+    end = start;
+  }
+  return text.slice(end + 1);
+}
+
+function lastNonEmptyLine(text: string): string | undefined {
+  let end = text.length;
+  while (end > 0) {
+    const start = text.lastIndexOf('\n', end - 1);
+    const trimmed = text.slice(start + 1, end).trim();
+    if (trimmed.length > 0) return trimmed;
+    end = start === -1 ? 0 : start;
+  }
+  return undefined;
 }
 
 class PrefixedWrappedLine implements Component {
@@ -2171,7 +2202,7 @@ export class ToolCallComponent extends Container {
     }
 
     if (this.subagentText.length > 0) {
-      const tailLines = this.subagentText.split('\n').slice(-3);
+      const tailLines = tailSourceLines(this.subagentText, 3).split('\n');
       for (const line of tailLines) {
         this.addChild(new Text(`    ${currentTheme.dim(line)}`, 0, 0));
       }
@@ -2434,12 +2465,14 @@ export class ToolCallComponent extends Container {
     const content = this.getActiveSubagentContent();
     // Keep both tones muted: a bright `fg('text')` here flashed white whenever
     // the window flipped between thinking and a brief text/tool-output segment.
+    const text =
+      content === undefined ? '…' : tailSourceLines(content.text, THINKING_PREVIEW_LINES * 4);
     const styled =
       content === undefined
-        ? currentTheme.dim('…')
+        ? currentTheme.dim(text)
         : content.tone === 'thinking'
-          ? currentTheme.dim(content.text)
-          : currentTheme.fg('textDim', content.text);
+          ? currentTheme.dim(text)
+          : currentTheme.fg('textDim', text);
     // Always exactly two rows (padded when short) so the live window matches
     // the finished card's height.
     return new PrefixedWrappedLine(
@@ -2871,11 +2904,8 @@ function computeLatestActivity(
     }
   }
   if (text.length > 0) {
-    const tail = text
-      .split('\n')
-      .toReversed()
-      .find((l) => l.trim().length > 0);
-    if (tail !== undefined) return tail.trim();
+    const tail = lastNonEmptyLine(text);
+    if (tail !== undefined) return tail;
   }
   return undefined;
 }
