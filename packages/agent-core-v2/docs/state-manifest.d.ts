@@ -1030,6 +1030,7 @@ export interface AgentStateSnapshot {
     };
     readonly params: /* ModelRequestParams — packages/agent-core-v2/src/llm-adapter/model/model-requester.ts */ {
       readonly cacheKey?: string;
+      readonly headers?: Readonly<Record<string, string>>;
       readonly sampling?: /* SamplingOptions — packages/agent-core-v2/src/llm-adapter/model/model-requester.ts */ {
         readonly temperature?: number;
         readonly topP?: number;
