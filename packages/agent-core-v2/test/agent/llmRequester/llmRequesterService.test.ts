@@ -1165,7 +1165,7 @@ describe('AgentLLMRequesterService combined recovery projections', () => {
 
     expect(policies).toEqual([
       { content: { contextWindow: 1000 } },
-      { content: { contextWindow: 1000 }, media: 'degraded' },
+      { content: { contextWindow: 1000 }, media: { degradeCount: expect.anything() } },
     ]);
   });
 
