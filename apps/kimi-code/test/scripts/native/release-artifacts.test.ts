@@ -3,7 +3,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFi
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { inflateRawSync, zstdDecompressSync } from 'node:zlib';
@@ -20,6 +20,17 @@ const artifactsDir = resolve(appRoot, 'dist-native/artifacts');
 const target = 'test-zip-artifact';
 const executableName = process.platform === 'win32' ? 'kimi.exe' : 'kimi';
 const fakeBinary = resolve(appRoot, 'dist-native/bin', target, executableName);
+
+function hasZstd(): boolean {
+  try {
+    execFileSync(process.platform === 'win32' ? 'where' : 'which', ['zstd'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const zstdAvailable = hasZstd();
 
 function sha256(bytes: Buffer | string): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -128,7 +139,7 @@ describe('native release artifacts', () => {
     );
   });
 
-  it('produces compressed artifacts and a manifest paired with the bare binary', async () => {
+  it.skipIf(!zstdAvailable)('produces compressed artifacts and a manifest paired with the bare binary', async () => {
     const binaryContent = 'native binary payload\n';
     mkdirSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true });
     writeFileSync(fakeBinary, binaryContent, { mode: 0o755 });
@@ -170,7 +181,7 @@ describe('native release artifacts', () => {
     });
   });
 
-  it('keeps the .exe suffix in Windows manifest filenames', async () => {
+  it.skipIf(!zstdAvailable)('keeps the .exe suffix in Windows manifest filenames', async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), 'kimi-manifest-win32-'));
     try {
       const binaryContent = Buffer.from('fake windows binary');
