@@ -1935,6 +1935,90 @@ describe('ToolCallComponent', () => {
     component.dispose();
   });
 
+  it('keeps the long line in the finished window when the tail ends with a blank', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const component = new ToolCallComponent(
+      {
+        id: 'call_agent_long_line_trailing_blank',
+        name: 'Agent',
+        args: { description: 'long line then done then blank' },
+      },
+      undefined,
+    );
+    component.onSubagentSpawned({
+      agentId: 'sub_long_line_trailing_blank',
+      agentName: 'explore',
+      runInBackground: false,
+    });
+    component.appendSubagentText(`${'x'.repeat(8001)}\ndone\n`, 'text');
+    component.onSubagentCompleted({ contextTokens: 0, resultSummary: '' } as never);
+
+    const rows = strip(component.render(60).join('\n'))
+      .split('\n')
+      .filter((line) => line.includes('│'));
+    expect(rows).toHaveLength(2);
+    // The finished window filters blank lines, so the trailing blank must not
+    // be counted as the second retained line.
+    expect(rows[0]).toContain('x');
+    expect(rows[1]).toContain('done');
+    component.dispose();
+  });
+
+  it('keeps the first error line for grouped failures', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const component = new ToolCallComponent(
+      {
+        id: 'call_agent_long_error',
+        name: 'Agent',
+        args: { description: 'fails with a long error' },
+      },
+      undefined,
+    );
+    component.onSubagentSpawned({
+      agentId: 'sub_long_error',
+      agentName: 'explore',
+      runInBackground: false,
+    });
+    const error = `boom: request failed\n${'stack line\n'.repeat(2000)}`;
+    component.onSubagentFailed({ error });
+
+    // AgentGroup renders errorText.split('\n').at(0).
+    expect(component.getSubagentSnapshot().errorText?.split('\n').at(0)).toBe(
+      'boom: request failed',
+    );
+    component.dispose();
+  });
+
+  it('strips control sequences from the retained tail past the preview cap', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const component = new ToolCallComponent(
+      {
+        id: 'call_agent_ansi_tail',
+        name: 'Agent',
+        args: { description: 'colored tail' },
+      },
+      undefined,
+    );
+    component.onSubagentSpawned({
+      agentId: 'sub_ansi_tail',
+      agentName: 'explore',
+      runInBackground: false,
+    });
+    // Past the cap, so the tail is trimmed; the SGR codes sit inside it.
+    const text = `${'plain line\n'.repeat(900)}${ESC}[31mfinal answer${ESC}[0m`;
+    component.appendSubagentText(text, 'text');
+
+    const raw = component.render(60).join('\n');
+    expect(raw).toContain('final answer');
+    // The retained tail carries no source styling, so its colour code is gone
+    // instead of being replayed without the matching reset.
+    expect(raw).not.toContain(`${ESC}[31m`);
+    component.dispose();
+  });
+
   it('bounds a single logical line longer than the two-row window', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

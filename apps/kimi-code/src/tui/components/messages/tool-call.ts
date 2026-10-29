@@ -592,10 +592,11 @@ function tailPreviewText(text: string): string {
   const lineBreak = tail.indexOf('\n');
   if (lineBreak !== -1) {
     const aligned = tail.slice(lineBreak + 1);
-    // Only drop the partial first line when at least two complete lines remain:
-    // those lines wrap exactly as they would unbounded. Otherwise the partial
-    // line is what fills the window, so the raw tail is the better answer.
-    if (aligned.includes('\n') && aligned.trim().length > 0) {
+    // Only drop the partial first line when two non-empty lines remain: those
+    // wrap exactly as they would unbounded. A trailing blank does not count —
+    // the finished window filters empty lines — and otherwise the partial line
+    // is what fills the window, so the raw tail is the better answer.
+    if (tailNonEmptyLines(aligned, 2).length === 2) {
       return stripTerminalSequences(aligned);
     }
   }
@@ -1652,7 +1653,7 @@ export class ToolCallComponent extends Container {
     }
     this.subagentUsage = payload.usage;
     this.subagentResultSummary =
-      payload.resultSummary.length > 0 ? tailPreviewText(payload.resultSummary) : undefined;
+      payload.resultSummary.length > 0 ? payload.resultSummary : undefined;
     if (this.subagentText.trim().length === 0 && this.subagentResultSummary !== undefined) {
       this.subagentText = tailPreviewText(this.subagentResultSummary);
     }
@@ -1692,7 +1693,7 @@ export class ToolCallComponent extends Container {
   onSubagentFailed(payload: { error: string }): void {
     this.subagentPhase = 'failed';
     this.subagentEndedAtMs ??= Date.now();
-    this.subagentError = tailPreviewText(payload.error);
+    this.subagentError = payload.error;
     this.syncSubagentElapsedTimer();
     this.headerText.setText(this.buildHeader());
     this.rebuildContent();
