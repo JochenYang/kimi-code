@@ -581,54 +581,27 @@ function tailSourceLines(text: string, maxLines: number): string {
 
 /**
  * Keeps the trailing slice of streamed subagent text that the card can show.
- * The cut never lands inside a surrogate pair or an escape sequence, and it
- * prefers a line boundary: from a line start every retained line wraps exactly
- * as it would in the unbounded text, so the visible rows do not change.
+ * The cut drops the first, partial line so every retained line starts at a
+ * line boundary: wrapping is then identical to the unbounded text, and no
+ * escape sequence is left half-open. A single logical line longer than the cap
+ * has no boundary to align to, so it keeps its raw tail.
  */
 function tailPreviewText(text: string): string {
   if (text.length <= SUBAGENT_PREVIEW_TEXT_MAX_CHARS) return text;
-  let start = text.length - SUBAGENT_PREVIEW_TEXT_MAX_CHARS;
-  const lead = text.codePointAt(start) ?? 0;
-  if (lead >= 0xdc00 && lead <= 0xdfff) start += 1;
-  const opener = text.lastIndexOf('\u001B', start);
-  if (opener !== -1 && opener < start) {
-    const end = escapeSequenceEnd(text, opener);
-    if (end > start) start = end;
-  }
-  const lineBreak = text.indexOf('\n', start);
+  const tail = text.slice(text.length - SUBAGENT_PREVIEW_TEXT_MAX_CHARS);
+  const lineBreak = tail.indexOf('\n');
   if (lineBreak !== -1) {
-    const afterLineStart = text.slice(lineBreak + 1);
-    // Only drop to a line start when it still leaves a couple of rows: for a
-    // huge line followed by a short one, keeping the raw suffix shows that
-    // line's tail instead of blanking the window.
-    if (afterLineStart.trim().length >= 200) return afterLineStart;
-  }
-  return text.slice(start);
-}
-
-/** End offset of the escape sequence starting at `from`, or `from` when
- *  the text there does not open one. Scans at most 64 characters, longer than
- *  any sequence these streams produce. */
-function escapeSequenceEnd(text: string, from: number): number {
-  if (text[from] !== '\u001B') return from;
-  const next = text[from + 1];
-  const limit = Math.min(text.length, from + 64);
-  if (next === '[') {
-    for (let i = from + 2; i < limit; i++) {
-      const code = text.codePointAt(i) ?? 0;
-      if (code >= 0x40 && code <= 0x7e) return i + 1;
+    const aligned = tail.slice(lineBreak + 1);
+    // Only drop the partial first line when at least two complete lines remain:
+    // those lines wrap exactly as they would unbounded. Otherwise the partial
+    // line is what fills the window, so the raw tail is the better answer.
+    if (aligned.includes('\n') && aligned.trim().length > 0) {
+      return stripTerminalSequences(aligned);
     }
-    return from;
   }
-  if (next === ']' || next === '_') {
-    for (let i = from + 2; i < limit; i++) {
-      const code = text.codePointAt(i) ?? 0;
-      if (code === 0x07) return i + 1;
-      if (code === 0x1b && text[i + 1] === '\\') return i + 2;
-    }
-    return from;
-  }
-  return Math.min(text.length, from + 2);
+  // The card applies its own styling, so control sequences carried in the
+  // streamed text are dropped rather than replayed without their opener.
+  return stripTerminalSequences(tail);
 }
 
 function lastNonEmptyLine(text: string): string | undefined {

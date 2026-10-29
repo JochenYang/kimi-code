@@ -1907,6 +1907,34 @@ describe('ToolCallComponent', () => {
     component.dispose();
   });
 
+  it('keeps the newest line visible when the tail is one long line then a short one', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const component = new ToolCallComponent(
+      {
+        id: 'call_agent_long_line_then_short',
+        name: 'Agent',
+        args: { description: 'long line then done' },
+      },
+      undefined,
+    );
+    component.onSubagentSpawned({
+      agentId: 'sub_long_line_then_short',
+      agentName: 'explore',
+      runInBackground: false,
+    });
+    component.appendSubagentText(`${'x'.repeat(8001)}\ndone`, 'text');
+
+    const rows = strip(component.render(60).join('\n'))
+      .split('\n')
+      .filter((line) => line.includes('│'));
+    expect(rows).toHaveLength(2);
+    // The partial first line still fills the upper row; the short line stays.
+    expect(rows[0]).toContain('x');
+    expect(rows[1]).toContain('done');
+    component.dispose();
+  });
+
   it('bounds a single logical line longer than the two-row window', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
