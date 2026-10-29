@@ -27,6 +27,7 @@ import {
   MESSAGE_INDENT,
   OUTCOME_MAX_LINES,
   RESULT_PREVIEW_LINES,
+  SUBAGENT_PREVIEW_TEXT_MAX_CHARS,
   THINKING_PREVIEW_LINES,
 } from '#/tui/constant/rendering';
 import {
@@ -570,11 +571,64 @@ function tailNonEmptyLines(text: string, maxLines: number): string[] {
 function tailSourceLines(text: string, maxLines: number): string {
   let end = text.length;
   for (let seen = 0; seen < maxLines; seen++) {
+    if (end === 0) return text;
     const start = text.lastIndexOf('\n', end - 1);
     if (start === -1) return text;
     end = start;
   }
   return text.slice(end + 1);
+}
+
+/**
+ * Keeps the trailing slice of streamed subagent text that the card can show.
+ * The cut never lands inside a surrogate pair or an escape sequence, and it
+ * prefers a line boundary: from a line start every retained line wraps exactly
+ * as it would in the unbounded text, so the visible rows do not change.
+ */
+function tailPreviewText(text: string): string {
+  if (text.length <= SUBAGENT_PREVIEW_TEXT_MAX_CHARS) return text;
+  let start = text.length - SUBAGENT_PREVIEW_TEXT_MAX_CHARS;
+  const lead = text.codePointAt(start) ?? 0;
+  if (lead >= 0xdc00 && lead <= 0xdfff) start += 1;
+  const opener = text.lastIndexOf('\u001B', start);
+  if (opener !== -1 && opener < start) {
+    const end = escapeSequenceEnd(text, opener);
+    if (end > start) start = end;
+  }
+  const lineBreak = text.indexOf('\n', start);
+  if (lineBreak !== -1) {
+    const afterLineStart = text.slice(lineBreak + 1);
+    // Only drop to a line start when it still leaves a couple of rows: for a
+    // huge line followed by a short one, keeping the raw suffix shows that
+    // line's tail instead of blanking the window.
+    if (afterLineStart.trim().length >= 200) return afterLineStart;
+  }
+  return text.slice(start);
+}
+
+/** End offset of the escape sequence starting at `from`, or `from` when
+ *  the text there does not open one. Scans at most 64 characters, longer than
+ *  any sequence these streams produce. */
+function escapeSequenceEnd(text: string, from: number): number {
+  if (text[from] !== '\u001B') return from;
+  const next = text[from + 1];
+  const limit = Math.min(text.length, from + 64);
+  if (next === '[') {
+    for (let i = from + 2; i < limit; i++) {
+      const code = text.codePointAt(i) ?? 0;
+      if (code >= 0x40 && code <= 0x7e) return i + 1;
+    }
+    return from;
+  }
+  if (next === ']' || next === '_') {
+    for (let i = from + 2; i < limit; i++) {
+      const code = text.codePointAt(i) ?? 0;
+      if (code === 0x07) return i + 1;
+      if (code === 0x1b && text[i + 1] === '\\') return i + 2;
+    }
+    return from;
+  }
+  return Math.min(text.length, from + 2);
 }
 
 function lastNonEmptyLine(text: string): string | undefined {
@@ -1287,7 +1341,7 @@ export class ToolCallComponent extends Container {
     if (subagent === undefined) return;
     this.subagentAgentId = subagent.id;
     this.subagentAgentName = subagent.name;
-    this.subagentText = subagent.text ?? '';
+    this.subagentText = tailPreviewText(subagent.text ?? '');
     for (const call of subagent.toolCalls ?? []) {
       if (call.result === undefined) {
         this.ongoingSubCalls.set(call.id, { name: call.name, args: call.args });
@@ -1625,9 +1679,9 @@ export class ToolCallComponent extends Container {
     }
     this.subagentUsage = payload.usage;
     this.subagentResultSummary =
-      payload.resultSummary.length > 0 ? payload.resultSummary : undefined;
+      payload.resultSummary.length > 0 ? tailPreviewText(payload.resultSummary) : undefined;
     if (this.subagentText.trim().length === 0 && this.subagentResultSummary !== undefined) {
-      this.subagentText = this.subagentResultSummary;
+      this.subagentText = tailPreviewText(this.subagentResultSummary);
     }
     this.syncSubagentElapsedTimer();
     this.headerText.setText(this.buildHeader());
@@ -1665,7 +1719,7 @@ export class ToolCallComponent extends Container {
   onSubagentFailed(payload: { error: string }): void {
     this.subagentPhase = 'failed';
     this.subagentEndedAtMs ??= Date.now();
-    this.subagentError = payload.error;
+    this.subagentError = tailPreviewText(payload.error);
     this.syncSubagentElapsedTimer();
     this.headerText.setText(this.buildHeader());
     this.rebuildContent();
@@ -1776,9 +1830,14 @@ export class ToolCallComponent extends Container {
   appendSubagentText(text: string, kind: SubagentTextKind = 'text'): void {
     this.lastSubagentStreamKind = kind;
     if (kind === 'thinking') {
-      this.subagentThinkingText += text;
+      // The preview window only ever shows a small tail, so keep the retained
+      // buffer bounded instead of concatenating the whole history. Trimming the
+      // merged buffer on each append costs O(cap + delta) regardless of how long
+      // the agent has been running, and the text still ends with the newest
+      // output.
+      this.subagentThinkingText = tailPreviewText(this.subagentThinkingText + text);
     } else {
-      this.subagentText += text;
+      this.subagentText = tailPreviewText(this.subagentText + text);
     }
     // Child-agent activity means it is running unless already terminal/backgrounded.
     if (
