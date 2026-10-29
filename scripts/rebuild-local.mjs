@@ -21,23 +21,39 @@ function shellOut(cmd, opts = {}) {
   return execSync(cmd, { cwd: root, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts });
 }
 
+function versionOf(tag) {
+  return tag.slice(tag.lastIndexOf('@') + 1);
+}
+
+// Prerelease tags (2.4.1-canary..., 0.0.0-dev.2) sort above the stable
+// release they lead up to, so they must be filtered out explicitly.
+function isStableRelease(tag) {
+  return /^\d+\.\d+\.\d+$/.test(versionOf(tag));
+}
+
+function releaseTags(extraArgs = '') {
+  const output = shellOut(`git tag -l "${releaseTagPattern}" --sort=-v:refname ${extraArgs}`.trim());
+  return output.split(/\r?\n/).filter((line) => line.length > 0);
+}
+
 function resolveLatestRelease() {
-  const output = shellOut(`git tag -l "${releaseTagPattern}" --sort=-v:refname`).trim();
-  const tag = output.split(/\r?\n/).find((line) => line.length > 0);
+  const tag = releaseTags().find(isStableRelease);
   if (tag === undefined) {
-    throw new Error(`no release tag matching "${releaseTagPattern}" found after fetching ${upstreamRemote}`);
+    throw new Error(
+      `no stable release tag matching "${releaseTagPattern}" found after fetching ${upstreamRemote}`,
+    );
   }
   return tag;
 }
 
-function resolveReleaseBase(releaseTag) {
-  try {
-    return shellOut(`git describe --tags --abbrev=0 --match "${releaseTagPattern}" ${branch}`).trim();
-  } catch {
+function resolveReleaseBase() {
+  const tag = releaseTags(`--merged ${branch}`).find(isStableRelease);
+  if (tag === undefined) {
     throw new Error(
       `cannot determine which release ${branch} is currently based on; rebase it onto a release tag manually first`,
     );
   }
+  return tag;
 }
 
 function hasUncommittedChanges() {
@@ -138,7 +154,7 @@ function main() {
     //    the previous release's bookkeeping commits — its version bump and web
     //    dist sync — which the new release has already superseded.
     const releaseTag = resolveLatestRelease();
-    const patchBase = resolveReleaseBase(releaseTag);
+    const patchBase = resolveReleaseBase();
     console.log(`\n==> Rebasing local patches onto release ${releaseTag}...`);
     let needsRebase = false;
     try {
