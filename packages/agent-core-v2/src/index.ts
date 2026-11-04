@@ -763,8 +763,6 @@ export * from '#/agent/toolExecutor/toolHooks';
 export * from '#/agent/toolExecutor/toolExecutor';
 export * from '#/agent/toolExecutor/toolExecutorService';
 export * from '#/agent/toolResultTruncation/toolResultTruncation';
-export * from '#/agent/toolResultTruncation/tiers';
-import '#/agent/toolResultTruncation/toolResultTruncationService';
 import '#/agent/toolResultTruncation/toolResultTruncationService';
 import '#/agent/toolActivation/toolActivationService';
 import '#/agent/toolRegistry/toolContribution';

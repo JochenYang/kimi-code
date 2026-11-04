@@ -1,16 +1,6 @@
-/**
- * Structured compaction handoff validation and working-set evidence extraction.
- *
- * Full compaction replaces assistant/tool history with a free-form summary.
- * These helpers (1) check that a summary covers required memory sections and
- * (2) pull high-value failure / error evidence from the pre-compact history so
- * it can be re-injected after compaction (not only prose about user messages).
- */
-
-import type { ContentPart } from '#/kosong/contract/message';
+import type { ContentPart } from '#/human/llm/message';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 
-/** Required conceptual sections a durable handoff should cover. */
 export const HANDOFF_REQUIRED_SECTIONS = [
   'intent',
   'constraints',
@@ -25,7 +15,6 @@ export interface HandoffValidationResult {
   readonly ok: boolean;
   readonly missing: readonly HandoffSection[];
   readonly present: readonly HandoffSection[];
-  /** Normalized section-tagged body when missing sections were filled with placeholders. */
   readonly normalizedSummary: string;
 }
 
@@ -45,11 +34,6 @@ const SECTION_PLACEHOLDERS: Readonly<Record<HandoffSection, string>> = {
   next_plan: '## Next plan\n(unstructured handoff — forward plan not explicitly sectioned)',
 };
 
-/**
- * Validate that a compaction summary covers required sections.
- * When sections are missing, appends placeholder headings so downstream
- * consumers always see a checkable skeleton (does not invent facts).
- */
 export function validateHandoffStructure(summary: string): HandoffValidationResult {
   const body = summary.trim();
   const present: HandoffSection[] = [];
@@ -79,7 +63,6 @@ export interface WorkingSetEvidenceItem {
 
 export interface WorkingSetEvidence {
   readonly items: readonly WorkingSetEvidenceItem[];
-  /** Model-visible injection text, or undefined when nothing worth keeping. */
   readonly injectionText: string | undefined;
 }
 
@@ -88,10 +71,6 @@ const FAILURE_HINT =
 const MAX_EVIDENCE_ITEMS = 8;
 const MAX_EXCERPT_CHARS = 800;
 
-/**
- * Extract high-value failure evidence from pre-compaction history.
- * Prefers tool messages marked isError / ERROR markers and text matching failure hints.
- */
 export function extractWorkingSetEvidence(
   history: readonly ContextMessage[],
   maxItems: number = MAX_EVIDENCE_ITEMS,
