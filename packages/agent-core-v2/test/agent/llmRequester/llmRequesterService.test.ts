@@ -10,6 +10,7 @@ import { AgentLoopRequester, KIMI_CODE_INFINITE_RETRY_ENV } from '#/agent/loop/r
 import { createAgentMediaPolicy } from '#/agent/loop/mediaPolicy';
 import { createMachineRequester } from '#/agent/loop/machine/requester';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
+import { IFlagService } from '#/app/flag/flag';
 import {
   createTurnMachine,
   type AssistantEntry,
@@ -265,6 +266,7 @@ function createService(
   ix.stub(IAgentToolSelectService, toolSelect);
   ix.stub(IAgentMediaResolverService, mediaResolver);
   ix.stub(ISessionTokenCountingService, tokenCounting);
+  ix.stub(IFlagService, { enabled: () => false });
   ix.stub(IAgentProfileService, profile);
   ix.stub(ISessionUsageService, usage);
   ix.stub(IConfigService, config);

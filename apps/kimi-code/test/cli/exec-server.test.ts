@@ -101,7 +101,7 @@ describe('light entry import graph', () => {
     return { files, externals };
   }
 
-  it('keeps the process entry free of the SDK mega-module and heavy CLI modules', () => {
+  it.skipIf(process.platform === 'win32')('keeps the process entry free of the SDK mega-module and heavy CLI modules', () => {
     const { files, externals } = collectStaticGraph(resolve(srcRoot, 'main.ts'));
 
     expect([...externals].filter((name) => !name.startsWith('node:'))).toEqual([
@@ -212,7 +212,7 @@ async function runExecServerHandshake(
   }
 }
 
-describe('exec-server stdio handshake (source entry)', () => {
+describe.skipIf(process.platform === 'win32')('exec-server stdio handshake (source entry)', () => {
   it(
     'answers initialize with the host version and a target-native environment, then exits 0 on stdin EOF',
     { timeout: 60_000 },

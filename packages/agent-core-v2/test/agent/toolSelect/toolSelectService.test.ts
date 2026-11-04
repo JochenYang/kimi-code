@@ -1752,16 +1752,8 @@ describe('post-compaction dynamic tool hot-reload', () => {
     select.recordRecentToolUse(MCP_ALPHA);
     select.recordRecentToolUse(MCP_BETA);
 
-    h.eventBus.publish(
-      new CompactionCompleted({
-        agentId: 'main',
-        result: { compactedCount: 1, tokensBefore: 1, tokensAfter: 1 },
-      }),
-    );
-
-    const declared = await declareSchemas(h);
-    expect(declared).toBeDefined();
-    const names = declared?.tools?.map((tool) => tool.name) ?? [];
+    const reloaded = select.reloadRecentAfterCompaction();
+    const names = reloaded.schemas.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([MCP_ALPHA, MCP_BETA]));
   });
 

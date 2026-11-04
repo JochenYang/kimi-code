@@ -42,6 +42,7 @@ function makeRunHandle(result?: { readonly summary: string; readonly usage?: unk
   return {
     agentId: 'child-1',
     turn: { id: 1 } as never,
+    partialOutput: () => '',
     completion: error === undefined
       ? Promise.resolve({ summary: result?.summary ?? '', usage: result?.usage as never })
       : Promise.reject(error),
