@@ -70,6 +70,7 @@ function emptyLoadResult(consecutiveFailures: number): LoadToolsResult {
     consecutiveFailures,
     suggestions: {},
     loadable: [],
+    schemas: [],
   };
 }
 

@@ -495,7 +495,6 @@ export class SessionEventHandler {
     this.host.streamingUI.flushNow();
     this.clearStepRetry();
     this.host.recordSessionActivity();
-    this.host.noteStepUsage(event.usage);
     this.maybeUpdateTokenSpeed(event);
     this.maybeShowDebugTiming(event);
 
