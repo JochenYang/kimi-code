@@ -43,3 +43,12 @@ handover.md
 *-mockup.html
 *-demo.html
 *-demos.html
+
+# `pnpm -r run build` races the node-sdk declaration build against the package
+# builds, so it can resolve these packages from source instead of dist and emit
+# declarations beside the sources. Build output, never committed.
+packages/agent-core-v2/src/**/*.d.ts
+packages/agent-core-v2/test/**/*.d.ts
+packages/klient/src/**/*.d.ts
+packages/oauth/src/**/*.d.ts
+!packages/*/src/env.d.ts
