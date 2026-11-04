@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { Message } from '#/llm-adapter/contract/message';
+import type { Message } from '#human/llm/message';
 import { estimateTokensForMessage, estimateTokensForMessages } from '#/llm-adapter/contract/tokens';
 
 export const CONTENT_PROJECTION_SOFT_THRESHOLD_RATIO = 0.6;
@@ -134,10 +134,14 @@ export function verifyContentProjectionInvariants(
     const before = original[i]!;
     const after = projected[i]!;
     if (before.role !== after.role) return `role-changed@${i}`;
-    if (before.role === 'tool' && before.toolCallId !== after.toolCallId) {
+    if (before.role === 'tool' && after.role === 'tool' && before.toolCallId !== after.toolCallId) {
       return `tool-call-id-changed@${i}`;
     }
-    if (before.role === 'assistant' && before.toolCalls !== after.toolCalls) {
+    if (
+      before.role === 'assistant' &&
+      after.role === 'assistant' &&
+      before.toolCalls !== after.toolCalls
+    ) {
       return `tool-calls-modified@${i}`;
     }
     if (after.role === 'tool' && after.content.length === 0) return `empty-tool-content@${i}`;
