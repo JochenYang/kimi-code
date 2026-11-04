@@ -1140,16 +1140,14 @@ describe('projector tool-exchange normalization', () => {
         {
           role: 'tool',
           content: [{ type: 'text', text: 'x'.repeat(400) }],
-          toolCalls: [],
           toolCallId: 'old',
         },
         {
           role: 'tool',
           content: [{ type: 'text', text: 'y'.repeat(400) }],
-          toolCalls: [],
           toolCallId: 'mid',
         },
-        { role: 'user', content: [{ type: 'text', text: 'recent' }], toolCalls: [] },
+        { role: 'user', content: [{ type: 'text', text: 'recent' }] },
         {
           role: 'assistant',
           content: [{ type: 'text', text: 'working' }],
@@ -1158,7 +1156,6 @@ describe('projector tool-exchange normalization', () => {
         {
           role: 'tool',
           content: [{ type: 'text', text: 'z'.repeat(20) }],
-          toolCalls: [],
           toolCallId: 'live',
         },
       ];
@@ -1174,7 +1171,7 @@ describe('projector tool-exchange normalization', () => {
 
     it('rejects a condensation that changes structure or protected content', () => {
       const original: Message[] = [
-        { role: 'tool', content: [{ type: 'text', text: 'one' }], toolCalls: [], toolCallId: 'a' },
+        { role: 'tool', content: [{ type: 'text', text: 'one' }], toolCallId: 'a' },
       ];
 
       expect(verifyContentProjectionInvariants(original, original, new Set([0]))).toBeUndefined();
@@ -1186,10 +1183,18 @@ describe('projector tool-exchange normalization', () => {
         ),
       ).toBe('protected-message-modified@0');
       expect(
-        verifyContentProjectionInvariants(original, [{ ...original[0]!, role: 'user' }], new Set()),
+        verifyContentProjectionInvariants(
+          original,
+          [{ ...original[0]!, role: 'user' } as unknown as Message],
+          new Set(),
+        ),
       ).toBe('role-changed@0');
       expect(
-        verifyContentProjectionInvariants(original, [{ ...original[0]!, toolCallId: 'b' }], new Set()),
+        verifyContentProjectionInvariants(
+          original,
+          [{ ...original[0]!, toolCallId: 'b' } as unknown as Message],
+          new Set(),
+        ),
       ).toBe('tool-call-id-changed@0');
       expect(
         verifyContentProjectionInvariants(

@@ -7,7 +7,7 @@ import {
 import type { ContextMessage } from '#/agent/contextMemory/types';
 
 function user(text: string): ContextMessage {
-  return { role: 'user', content: [{ type: 'text', text }], toolCalls: [], origin: { kind: 'user' } };
+  return { role: 'user', content: [{ type: 'text', text }], origin: { kind: 'user' } };
 }
 
 function toolError(id: string, name: string, text: string): ContextMessage {
@@ -17,7 +17,6 @@ function toolError(id: string, name: string, text: string): ContextMessage {
     toolCallId: id,
     isError: true,
     content: [{ type: 'text', text }],
-    toolCalls: [],
   };
 }
 
