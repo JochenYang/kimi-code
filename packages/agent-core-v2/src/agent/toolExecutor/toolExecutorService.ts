@@ -195,7 +195,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
         this.log,
         this.telemetry,
         options.turnId,
-        options.trace?.traceId,
+        options.trace?.requestId,
       ),
     );
     const preparedTasks: Array<{

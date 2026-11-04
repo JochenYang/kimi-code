@@ -32,18 +32,9 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
       const anchor: TokenAnchor = { length, tokens, measured: true };
       const committed = this._state();
       const anchors = [...committed.anchors.filter((a) => a.length < length), anchor];
-      const calibration = calibrateFromMeasurement(
-        committed.calibration,
-        event.estimated,
-        event.measuredInput,
-      );
-      if (
-        !(committed.tokens === tokens && anchorsEqual(committed.anchors, anchors)) ||
-        calibration !== committed.calibration
-      ) {
+      if (!(committed.tokens === tokens && anchorsEqual(committed.anchors, anchors))) {
         this.state.anchors = anchors;
         this.state.tokens = tokens;
-        this.state.calibration = calibration;
       }
       void this.emit(new AgentStatusUpdated({ agentId: event.agentId, contextTokens: tokens }));
     });
@@ -99,9 +90,7 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
       from === 0 && measuredEnd === anchor.length
         ? anchor.tokens
         : estimateTokensForMessages(context.slice(from, measuredEnd));
-    const estimated = this.calibratedEstimate(
-      estimateTokensForMessages(context.slice(estimatedStart, to)),
-    );
+    const estimated = estimateTokensForMessages(context.slice(estimatedStart, to));
     return { size: measured + estimated, measured, estimated };
   }
 
@@ -109,7 +98,6 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
     input: readonly Message[],
     _output: readonly Message[],
     usage: TokenUsage,
-    estimatedInputTokens?: number,
   ): Promise<void> {
     const context = this.context();
     const tokens = tokenUsageTotal(usage);
@@ -118,13 +106,7 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
       new TokenCountingMeasured({
         agentId: this.agent.agentId,
         length: context.length,
-<<<<<<< HEAD
         tokens,
-=======
-        tokens: tokenUsageTotal(usage),
-        estimated: estimatedInputTokens,
-        measuredInput: inputTotal(usage),
->>>>>>> 8eec38a2 (feat(agent-core-v2): wire calibration and context projection)
       }),
     );
   }
@@ -139,8 +121,7 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
 
   statusSize(strategy: TokenCountingStrategy): number {
     if (strategy === 'measured') return this.latestMeasured();
-    if (strategy === 'estimated')
-      return this.calibratedEstimate(estimateTokensForMessages(this.context()));
+    if (strategy === 'estimated') return estimateTokensForMessages(this.context());
     return Math.max(this.get().size, this.latestMeasured());
   }
 
@@ -179,10 +160,6 @@ export class TokenCountingAgentModel extends AgentModel<TokenCountingState> {
     );
   }
 
-  private calibratedEstimate(estimate: number): number {
-    return applyTokenCalibration(estimate, this.state.calibration.factor);
-  }
-
   private context(): readonly ContextMessage[] {
     return this.readLegacy(contextMemoryKey) as readonly ContextMessage[];
   }
@@ -201,11 +178,7 @@ export const TokenCountingAgentModelDefinition = defineAgentModel({
   id: 'tokenCounting',
   model: TokenCountingAgentModel,
   state: {
-    initial: (): TokenCountingState => ({
-      anchors: [],
-      tokens: 0,
-      calibration: emptyTokenCalibration(),
-    }),
+    initial: (): TokenCountingState => ({ anchors: [], tokens: 0 }),
     schema: z.custom<TokenCountingState>(),
   },
   events: [
@@ -226,15 +199,6 @@ function matchesContext(input: readonly Message[], context: readonly ContextMess
 
 function tokenUsageTotal(usage: TokenUsage): number | undefined {
   return grandTotal(usage);
-}
-
-function calibrateFromMeasurement(
-  state: TokenCalibrationState,
-  estimated: number | undefined,
-  measuredInput: number | undefined,
-): TokenCalibrationState {
-  if (estimated === undefined || measuredInput === undefined) return state;
-  return updateTokenCalibration(state, estimated, measuredInput);
 }
 
 function normalizeSliceIndex(index: number, length: number): number {
