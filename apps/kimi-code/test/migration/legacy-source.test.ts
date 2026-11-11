@@ -23,11 +23,10 @@ describe('resolveLegacySourceHome', () => {
   });
 
   it.skipIf(process.platform === 'win32')('resolves a relative KIMI_SHARE_DIR against the process CWD (old-CLI rule)', () => {
-      const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: 'relative/kimi' }, HOME, CWD);
-      expect(r.sourceHome).toBe(join(CWD, 'relative', 'kimi'));
-      expect(r.origin).toBe('share-dir');
-    },
-  );
+    const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: 'relative/kimi' }, HOME, CWD);
+    expect(r.sourceHome).toBe(join(CWD, 'relative', 'kimi'));
+    expect(r.origin).toBe('share-dir');
+  });
 
   it.skipIf(process.platform === 'win32')('does not expand ~ in KIMI_SHARE_DIR (old-CLI rule)', () => {
     const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: '~/custom' }, HOME, CWD);
@@ -40,10 +39,9 @@ describe('resolveLegacySourceHome', () => {
   });
 
   it.skipIf(process.platform === 'win32')('keeps a single source when KIMI_SHARE_DIR points at ~/.kimi itself', () => {
-      const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: join(HOME, '.kimi') }, HOME, CWD);
-      expect(r.skillsSourceHome).toBeUndefined();
-    },
-  );
+    const r = resolveLegacySourceHome({ KIMI_SHARE_DIR: join(HOME, '.kimi') }, HOME, CWD);
+    expect(r.skillsSourceHome).toBeUndefined();
+  });
 });
 
 describe('sameLegacyPath', () => {
