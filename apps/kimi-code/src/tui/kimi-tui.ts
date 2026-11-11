@@ -320,7 +320,7 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     contextUsage: 0,
     contextTokens: 0,
     maxContextTokens: 0,
-cumulativeTokens: 0,
+    cumulativeTokens: 0,
     lastTokenSpeed: null,
     isCompacting: false,
     isReplaying: false,

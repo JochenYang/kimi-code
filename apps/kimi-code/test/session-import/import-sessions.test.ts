@@ -222,16 +222,15 @@ describe('importing sessions', () => {
   });
 
   it.skipIf(process.platform === 'win32')('derives stable session ids and honors source home overrides', () => {
-      const base = { source: 'codex' as const, path: '/example/rollout.jsonl', cwd: '/example', modifiedAt: NOW };
-      expect(importedSessionId({ ...base, sourceId: '019a1b2c-3d4e' })).toBe('ses_019a1b2c-3d4e');
-      expect(importedSessionId({ ...base, sourceId: 'odd id/with slash' })).toMatch(/^ses_[0-9a-f]{32}$/);
-      expect(sourceHomes({ CLAUDE_CONFIG_DIR: '/example/claude', CODEX_HOME: '/example/codex' }, '/home/example')).toEqual({
-        claudeHome: '/example/claude',
-        codexHome: '/example/codex',
-      });
-      expect(sourceHomes({}, '/home/example')).toEqual({ claudeHome: '/home/example/.claude', codexHome: '/home/example/.codex' });
-    },
-  );
+    const base = { source: 'codex' as const, path: '/example/rollout.jsonl', cwd: '/example', modifiedAt: NOW };
+    expect(importedSessionId({ ...base, sourceId: '019a1b2c-3d4e' })).toBe('ses_019a1b2c-3d4e');
+    expect(importedSessionId({ ...base, sourceId: 'odd id/with slash' })).toMatch(/^ses_[0-9a-f]{32}$/);
+    expect(sourceHomes({ CLAUDE_CONFIG_DIR: '/example/claude', CODEX_HOME: '/example/codex' }, '/home/example')).toEqual({
+      claudeHome: '/example/claude',
+      codexHome: '/example/codex',
+    });
+    expect(sourceHomes({}, '/home/example')).toEqual({ claudeHome: '/home/example/.claude', codexHome: '/home/example/.codex' });
+  });
 });
 
 describe('ImportSessionsScreenComponent', () => {
