@@ -187,8 +187,8 @@ describe('transcript display previews', () => {
       '   Thought for 3s, read 1 file',
       ' ● Used Edit (src/app.ts) · +1 -1',
       '   +1 -1 src/app.ts',
-      '      1 - start()',
-      '      1 + start(port = 3000)',
+      '      1 │ - start()',
+      '      1 │ + start(port = 3000)',
       ' ● Ran a command · $ npm test',
       '   12 tests passed',
     ]);

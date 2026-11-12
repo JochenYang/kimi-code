@@ -454,7 +454,7 @@ describe('TranscriptGroupComponent', () => {
     expect(body).toContain('│     src/a.ts');
     expect(body).toContain('│     src/b.ts');
     expect(body.some((line) => line.includes('src/a.ts, src/b.ts'))).toBe(false);
-    expect(body.some((line) => line.includes('1 - one'))).toBe(true);
+    expect(body.some((line) => line.includes('1 │ - one'))).toBe(true);
     expect(body.some((line) => line.includes('/work/a.ts'))).toBe(false);
 
     edit.setExpanded(false);
