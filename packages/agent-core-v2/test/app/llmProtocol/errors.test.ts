@@ -17,7 +17,7 @@ import {
   normalizeAPIStatusError,
   parseRetryAfterMs,
 } from '#/llm-adapter/contract/errors';
-import { isTransientHttpStatus } from '#/llm/protocol/rules/status';
+import { isTransientHttpStatus } from '@moonshot-ai/core/llm/protocol/rules/status';
 import { describe, expect, it } from 'vitest';
 
 describe('ChatProviderError', () => {
