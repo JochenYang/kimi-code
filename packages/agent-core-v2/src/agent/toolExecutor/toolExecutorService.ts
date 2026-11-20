@@ -23,7 +23,6 @@ import {
   type LegacyToolAgentContext,
   type LegacyToolPreparation,
   type ToolExecutionEvent,
-  type ToolExecutionSnapshot,
 } from '#/tool/executor';
 
 import {
@@ -333,22 +332,16 @@ export class AgentToolExecutorService extends Service implements IAgentToolExecu
     this.toolCallDupTypes.delete(event.call.id);
     if (outcome !== 'success') properties['error_type'] = 'error';
     this.telemetry.track2('tool_call', properties);
-    this.trackArgsValidationFailure(event, snapshot);
-  }
-
-  private trackArgsValidationFailure(
-    event: ToolExecutionEvent<any, any, any>,
-    snapshot: ToolExecutionSnapshot<any, any>,
-  ): void {
     const failure = snapshot.error?.outcome === 'failed' ? snapshot.error : undefined;
-    if (failure?.phase !== 'parse' && failure?.phase !== 'validate') return;
-    this.telemetry.track2('tool_args_validation_failed', {
-      turn_id: event.context.turnId ?? 0,
-      tool_call_id: event.call.id,
-      tool_name: event.call.name,
-      reason: failure.phase === 'parse' ? 'parse_failed' : 'schema_invalid',
-      trace_id: event.context.trace?.requestId,
-    });
+    if (failure?.phase === 'parse' || failure?.phase === 'validate') {
+      this.telemetry.track2('tool_args_validation_failed', {
+        turn_id: properties.turn_id,
+        tool_call_id: event.call.id,
+        tool_name: event.call.name,
+        reason: failure.phase === 'parse' ? 'parse_failed' : 'schema_invalid',
+        trace_id: properties.request_id,
+      });
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { Message } from '#human/llm/message';
+import type { Message } from '@moonshot-ai/core/llm/message';
 import { estimateTokensForMessage, estimateTokensForMessages } from '#/llm-adapter/contract/tokens';
 
 export const CONTENT_PROJECTION_SOFT_THRESHOLD_RATIO = 0.6;

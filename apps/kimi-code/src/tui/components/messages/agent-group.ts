@@ -126,8 +126,6 @@ export class AgentGroupComponent extends Container {
     const bullet = allDone
       ? currentTheme.fg('success', STATUS_BULLET)
       : currentTheme.fg('text', STATUS_BULLET);
-    // Group wall-clock from snapshot anchors (earliest start → latest end / now).
-    // max(per-agent elapsed) under-counts sequential spawns in one group.
     const elapsedSeconds = groupWallClockSeconds(snapshots);
 
     if (allDone) {
@@ -319,12 +317,6 @@ function formatHeaderTail(args: {
   return parts.length > 0 ? currentTheme.dim(` · ${parts.join(' · ')}`) : '';
 }
 
-/**
- * Wall-clock for the whole group from snapshot anchors only:
- * min(startedAtMs) → max(endedAtMs) when every started member has ended,
- * else → now. Unstarted members do not move the start anchor; they keep the
- * group active so end stays "now".
- */
 function groupWallClockSeconds(
   snapshots: readonly ToolCallSubagentSnapshot[],
 ): number | undefined {

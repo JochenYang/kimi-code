@@ -499,7 +499,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     const headers =
       model === undefined
         ? undefined
-        : expandHeaderPlaceholders(model.endpoint.headers, {
+        : expandHeaderPlaceholders(model.endpoint.headers ?? {}, {
             session_id: this.sessionContext.sessionId,
           });
     return {

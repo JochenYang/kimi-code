@@ -123,9 +123,7 @@ export interface ToolCallSubagentSnapshot {
   readonly phase: SubagentPhase | undefined;
   readonly toolCount: number;
   readonly elapsedSeconds: number | undefined;
-  /** Wall-clock start of this subagent card; used by AgentGroup run-level elapsed. */
   readonly startedAtMs: number | undefined;
-  /** Wall-clock end once terminal; undefined while still active. */
   readonly endedAtMs: number | undefined;
   readonly tokens: number;
   readonly isError: boolean;
