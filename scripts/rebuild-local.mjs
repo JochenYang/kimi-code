@@ -174,6 +174,8 @@ function main() {
 
     run('pnpm -r --filter "./packages/*" run build');
 
+    run('pnpm -C apps/kimi-code run prebuild');
+
     run('pnpm -C apps/kimi-code run build:native:sea');
 
     const built = resolve(root, 'apps/kimi-code/dist-native/bin/win32-x64/kimi.exe');
