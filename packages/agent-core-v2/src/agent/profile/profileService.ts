@@ -516,7 +516,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
           ),
         },
       },
-      endpoint: { headers },
+      ...(headers === undefined ? {} : { endpoint: { headers } }),
     };
   }
 

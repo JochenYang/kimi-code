@@ -814,10 +814,12 @@ describe('AgentProfileService (wire-backed config.update)', () => {
     host.svc.update({ modelAlias: 'example-model', thinkingLevel: 'high' });
 
     expect(host.svc.resolveRequestParams()).toMatchObject({
-      cacheKey: 'session-test',
-      headers: {
-        'x-session-id': 'session-test',
-        'x-session-upper': 'session-test',
+      model: { cacheKey: 'session-test' },
+      endpoint: {
+        headers: {
+          'x-session-id': 'session-test',
+          'x-session-upper': 'session-test',
+        },
       },
     });
   });
