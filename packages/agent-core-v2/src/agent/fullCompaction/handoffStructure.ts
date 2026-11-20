@@ -1,4 +1,4 @@
-import type { ContentPart } from '#/human/llm/message';
+import type { ContentPart } from '@moonshot-ai/core/llm/message';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 
 export const HANDOFF_REQUIRED_SECTIONS = [

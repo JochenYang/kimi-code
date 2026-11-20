@@ -219,8 +219,6 @@ describe('AgentGroupComponent', () => {
   });
 
   it('uses group wall-clock for sequential agents, not max per-agent lifetime', () => {
-    // Sequential agents: agent A runs 0→5s, agent B runs 5→15s. Header must
-    // show 15s (earliest start → latest end), not max(5, 10)=10s.
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const ui = stubTui();
@@ -237,12 +235,9 @@ describe('AgentGroupComponent', () => {
     group.attach('call_agent_2', second);
 
     vi.setSystemTime(15_000);
-    // Header text is only rebuilt on child snapshot / attach; clock jumps alone
-    // do not repaint. Invalidate forces the same path the live elapsed timer uses.
     group.invalidate();
     const mid = renderText(group);
     expect(mid).toContain('Running 2 agents (1 done, 1 running) · 15s');
-    // Per-row still shows each agent's own lifetime.
     expect(mid).toContain('explore · plan questions · 0 tools · 5s · ✓ Completed');
     expect(mid).toContain('explore · research claims · 0 tools · 10s · Running');
 

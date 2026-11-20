@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
-import { TestInstantiationService } from '#/_base/di/test';
 import { UserCancellationError, abortError } from '#/_base/utils/abort';
 import { IEventBus } from '#/app/event/eventBus';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
@@ -38,7 +36,10 @@ function makeRequester(events: unknown[]): IAgentScopeHandle {
   } as unknown as IAgentScopeHandle;
 }
 
-function makeRunHandle(result?: { readonly summary: string; readonly usage?: unknown }, error?: unknown): AgentRunHandle {
+function makeRunHandle(
+  result?: { readonly summary: string; readonly usage?: unknown },
+  error?: Error,
+): AgentRunHandle {
   return {
     agentId: 'child-1',
     turn: { id: 1 } as never,

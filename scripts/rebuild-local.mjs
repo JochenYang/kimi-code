@@ -25,8 +25,6 @@ function versionOf(tag) {
   return tag.slice(tag.lastIndexOf('@') + 1);
 }
 
-// Prerelease tags (2.4.1-canary..., 0.0.0-dev.2) sort above the stable
-// release they lead up to, so they must be filtered out explicitly.
 function isStableRelease(tag) {
   return /^\d+\.\d+\.\d+$/.test(versionOf(tag));
 }
@@ -73,8 +71,6 @@ function stashUncommittedChanges() {
   console.log('\n==> Stashing uncommitted changes so rebase can proceed...');
   run(`git stash push -u -m "${marker}"`);
 
-  // Resolve our unique marker to a commit instead of trusting stash@{0};
-  // another process may add a newer stash before this lookup completes.
   const entries = shellOut('git stash list --format="%H%x09%gs"').trim();
   for (const entry of entries.split(/\r?\n/)) {
     const [commit, subject] = entry.split('\t', 2);
@@ -86,8 +82,6 @@ function stashUncommittedChanges() {
 function applyStash(stashCommit) {
   console.log(`\n==> Restoring stashed changes (${stashCommit})...`);
   run(`git stash apply ${stashCommit}`);
-
-  // If apply conflicts, the stash remains available for recovery.
 }
 
 function findStashSelector(stashCommit) {
@@ -137,22 +131,14 @@ function main() {
   let rebaseFailed = false;
 
   try {
-    // 1. Ensure we're on the right branch.
     checkBranch();
 
-    // 2. Temporarily remove local changes before fetch/rebase. They are
-    // restored before any install/build/push step.
     if (hasUncommittedChanges()) {
       stashCommit = stashUncommittedChanges();
     }
 
-    // 3. Fetch the latest upstream release tags.
     run(`git fetch ${upstreamRemote} --tags --force`);
 
-    // 4. Rebase our patches onto the latest upstream release. Replaying
-    //    "${releaseTag}..HEAD" with --onto (instead of `rebase <tag>`) drops
-    //    the previous release's bookkeeping commits — its version bump and web
-    //    dist sync — which the new release has already superseded.
     const releaseTag = resolveLatestRelease();
     const patchBase = resolveReleaseBase();
     console.log(`\n==> Rebasing local patches onto release ${releaseTag}...`);
@@ -177,8 +163,6 @@ function main() {
       console.log(`    (already up to date with release ${releaseTag} — skipping rebase)`);
     }
 
-    // 5. Restore the exact stash created above. Rebase must succeed before
-    // applying local changes; conflicts leave the stash intact.
     if (stashCommit) {
       applyStash(stashCommit);
       stashApplied = true;
@@ -186,16 +170,12 @@ function main() {
       stashDropped = true;
     }
 
-    // 6. Install dependencies.
     run('pnpm install');
 
-    // 7. Build packages.
     run('pnpm -r --filter "./packages/*" run build');
 
-    // 8. Build native SEA binary.
     run('pnpm -C apps/kimi-code run build:native:sea');
 
-    // 9. Replace installed binary.
     const built = resolve(root, 'apps/kimi-code/dist-native/bin/win32-x64/kimi.exe');
     if (!existsSync(built)) {
       throw new Error(`built binary not found at ${built}`);
@@ -203,11 +183,6 @@ function main() {
     copyFileSync(built, kimiBin);
     console.log(`\n==> ✅ Installed to ${kimiBin}`);
 
-    // 10. Push the rebased branch to the fork so the fork mirrors
-    //     "upstream release + our patches". This is a sync, so use push with
-    //     --force-with-lease: rebase rewrites our local commits so the fast-
-    //     forward assumption doesn't hold, but the remote state is updated
-    //     only if no one else moved HEAD on the fork.
     console.log(`\n==> Syncing to ${forkRemote}/${forkBranch}...`);
     try {
       run(`git push ${forkRemote} ${branch}:${forkBranch} --force-with-lease`);
