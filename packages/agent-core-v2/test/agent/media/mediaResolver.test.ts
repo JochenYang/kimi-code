@@ -1959,7 +1959,7 @@ describe('AgentMediaResolverService media labels', () => {
       ] },
       policy: {
         recoveries: [media.recovery],
-        resolvers: [media.toolResolver, createStructureResolver(new AgentLoopProjector(() => {})), media.resolver],
+        resolvers: [media.toolResolver, createStructureResolver(new AgentLoopProjector(() => {}, () => {})), media.resolver],
       },
     }, {
       signal: new AbortController().signal,

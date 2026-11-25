@@ -2280,7 +2280,6 @@ describe('AgentToolSelectService loadable-tools announcements', () => {
 
 describe('post-compaction dynamic tool hot-reload', () => {
   it('reloads recently used MCP tools after compaction.completed', async () => {
-    flagEnabled = true;
     const h = createHarness();
     registerMcp(h, new StubMcpTool(MCP_ALPHA));
     registerMcp(h, new StubMcpTool(MCP_BETA));
@@ -2294,7 +2293,7 @@ describe('post-compaction dynamic tool hot-reload', () => {
   });
 
   it('reloadRecentAfterCompaction is a no-op when the gate is closed', () => {
-    flagEnabled = false;
+    capabilities = makeCapabilities({ tool_use: true, dynamically_loaded_tools: false });
     const h = createHarness();
     registerMcp(h, new StubMcpTool(MCP_ALPHA));
     const select = h.ix.get(IAgentToolSelectService);
