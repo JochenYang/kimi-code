@@ -7,6 +7,7 @@ import { discoverFileSkills } from '#/features/skill/catalog/fileSkillDiscovery'
 import type { SkillDiscoveryResult } from '#/features/skill/catalog/skillDiscovery';
 import type { SkillRoot } from '#/features/skill/catalog/types';
 import { BugIndicatingError, Error2, ErrorCodes, PluginErrors } from '#/errors';
+import { resolveProgramPath } from '#/environment/programPath';
 import type { McpServerConfig } from '#/mcpCore/config-schema';
 
 import { downloadZip, extractZip } from './archive';
@@ -1110,10 +1111,17 @@ function withMcpServerEnabled(config: McpServerConfig, enabled: boolean): McpSer
   return { ...config, enabled };
 }
 
-function withPluginMcpRuntime(
+export interface PluginMcpRuntimeOptions {
+  readonly execPath: string;
+  readonly electron: boolean;
+  readonly systemNode: string | undefined;
+}
+
+export function pluginMcpRuntimeConfig(
   config: McpServerConfig,
   pluginRoot: string,
   kimiHomeDir: string,
+  options: PluginMcpRuntimeOptions,
 ): McpServerConfig {
   if (config.transport === 'http' || config.transport === 'sse') return config;
 
@@ -1122,36 +1130,66 @@ function withPluginMcpRuntime(
     KIMI_CODE_HOME: kimiHomeDir,
     KIMI_PLUGIN_ROOT: pluginRoot,
   };
+  const cwd = pluginMcpCwd(config.cwd, pluginRoot);
 
-  if (config.command === 'node' && isElectron()) {
+  if (config.command === 'node' && options.electron) {
     return {
       ...config,
-      command: process.execPath,
+      command: options.execPath,
       args: config.args ?? [],
-      cwd: config.cwd ?? pluginRoot,
+      cwd,
       env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
     };
   }
 
-  if (config.command === 'node' && isKimiNativeBinary()) {
+  if (config.command === 'node' && isNativeBinaryPath(options.execPath)) {
+    if (options.systemNode !== undefined) {
+      return { ...config, command: options.systemNode, args: config.args ?? [], cwd, env };
+    }
     return {
       ...config,
-      command: process.execPath,
+      command: options.execPath,
       args: [KIMI_NODE_FALLBACK_SUBCOMMAND, ...(config.args ?? [])],
-      cwd: config.cwd ?? pluginRoot,
+      cwd,
       env,
     };
   }
 
-  return { ...config, cwd: config.cwd ?? pluginRoot, env };
+  return { ...config, cwd, env };
+}
+
+function pluginMcpCwd(cwd: string | undefined, pluginRoot: string): string {
+  if (cwd === undefined) return pluginRoot;
+  if (path.isAbsolute(cwd)) return cwd;
+  return path.resolve(pluginRoot, cwd);
+}
+
+function isNativeBinaryPath(execPath: string): boolean {
+  return !path.basename(execPath).toLowerCase().startsWith('node');
+}
+
+function resolveSystemNode(): string | undefined {
+  try {
+    return resolveProgramPath('node', { cwd: process.cwd() });
+  } catch {
+    return undefined;
+  }
+}
+
+function withPluginMcpRuntime(
+  config: McpServerConfig,
+  pluginRoot: string,
+  kimiHomeDir: string,
+): McpServerConfig {
+  return pluginMcpRuntimeConfig(config, pluginRoot, kimiHomeDir, {
+    execPath: process.execPath,
+    electron: isElectron(),
+    systemNode: resolveSystemNode(),
+  });
 }
 
 function isElectron(): boolean {
   return typeof process.versions['electron'] === 'string';
-}
-
-function isKimiNativeBinary(): boolean {
-  return !path.basename(process.execPath).toLowerCase().startsWith('node');
 }
 
 async function discoverPluginSkills(

@@ -8,7 +8,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PluginAvailabilityStore } from '#/app/plugin/availability';
-import { PluginManager } from '#/app/plugin/manager';
+import { PluginManager, pluginMcpRuntimeConfig } from '#/app/plugin/manager';
+import type { McpServerConfig } from '#/mcpCore/config-schema';
 
 import { stubSkill } from '../../features/skill/catalog/stubs';
 
@@ -154,6 +155,64 @@ function mockGithubFetch(options: MockGithubFetchOptions): void {
     }) as typeof fetch,
   );
 }
+
+describe('plugin MCP runtime', () => {
+  const pluginRoot = path.join(path.sep, 'plugins', 'managed', 'demo');
+  const home = path.join(path.sep, 'home', '.kimi-code');
+  const nodeConfig: McpServerConfig = {
+    transport: 'stdio',
+    command: 'node',
+    args: ['./bin/server.mjs'],
+    cwd: './',
+  };
+
+  function stdio(config: McpServerConfig): Extract<McpServerConfig, { transport: 'stdio' }> {
+    if (config.transport !== 'stdio') throw new Error('expected a stdio server');
+    return config;
+  }
+
+  it('resolves a relative plugin cwd against the plugin root', () => {
+    const config = stdio(
+      pluginMcpRuntimeConfig(nodeConfig, pluginRoot, home, {
+        execPath: process.execPath,
+        electron: false,
+        systemNode: undefined,
+      }),
+    );
+
+    expect(config.cwd).toBe(path.resolve(pluginRoot, './'));
+    expect(config.env?.['KIMI_PLUGIN_ROOT']).toBe(pluginRoot);
+  });
+
+  it('prefers a system node over the in-process runner for the native binary', () => {
+    const systemNode = path.join(path.sep, 'Program Files', 'nodejs', 'node.exe');
+    const config = stdio(
+      pluginMcpRuntimeConfig(nodeConfig, pluginRoot, home, {
+        execPath: path.join(path.sep, 'apps', 'kimi-code', 'kimi.exe'),
+        electron: false,
+        systemNode,
+      }),
+    );
+
+    expect(config.command).toBe(systemNode);
+    expect(config.args).toEqual(['./bin/server.mjs']);
+    expect(config.cwd).toBe(path.resolve(pluginRoot, './'));
+  });
+
+  it('falls back to the in-process runner when no system node exists', () => {
+    const execPath = path.join(path.sep, 'apps', 'kimi-code', 'kimi.exe');
+    const config = stdio(
+      pluginMcpRuntimeConfig(nodeConfig, pluginRoot, home, {
+        execPath,
+        electron: false,
+        systemNode: undefined,
+      }),
+    );
+
+    expect(config.command).toBe(execPath);
+    expect(config.args).toEqual(['__plugin_run_node', './bin/server.mjs']);
+  });
+});
 
 describe('PluginManager consumption plane', () => {
   afterEach(() => {
